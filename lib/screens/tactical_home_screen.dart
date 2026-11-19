@@ -1,4 +1,5 @@
-﻿import 'package:flutter/foundation.dart';
+﻿import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/safety_ping.dart';
@@ -9,14 +10,16 @@ import '../services/sos_cloud_service.dart';
 
 class AlertGroup {
   final String name;
-  final int members;
+  final List<String> responderIds;
   bool isSelected;
 
   AlertGroup({
     required this.name,
-    required this.members,
+    required this.responderIds,
     this.isSelected = true,
   });
+
+  int get membersCount => responderIds.length;
 }
 
 class TacticalHomeScreen extends StatefulWidget {
@@ -26,7 +29,10 @@ class TacticalHomeScreen extends StatefulWidget {
   State<TacticalHomeScreen> createState() => _TacticalHomeScreenState();
 }
 
-class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
+class _TacticalHomeScreenState extends State<TacticalHomeScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _orbitController;
+
   bool _isSosActive = false;
   bool _isLocating = false;
   bool _isPublishingCloud = false;
@@ -34,8 +40,6 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
   String? _lastAlertIdSeen;
 
   String _myResponderId = 'AEGIS-1001';
-  String _sendToResponderId = 'AEGIS-1001';
-
   String _statusText = 'SHIELD ARMED • STANDBY';
   String _locationSource = 'DEFAULT SECTOR';
   double _lat = 25.5941;
@@ -44,16 +48,38 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
   double? _localTargetLat;
   double? _localTargetLng;
   String _localTargetLabel = 'NO ACTIVE DISTRESS SIGNAL';
-  String _localTargetGroupsSummary = '';
+  String _lastSentSummary = '';
 
   final List<AlertGroup> _alertGroups = [
-    AlertGroup(name: 'Family Shield', members: 4, isSelected: true),
-    AlertGroup(name: 'Trusted Circle', members: 3, isSelected: true),
-    AlertGroup(name: 'Local Rapid Squad', members: 5, isSelected: false),
+    AlertGroup(
+      name: 'Family Shield',
+      responderIds: ['AEGIS-1001', 'AEGIS-1002'],
+      isSelected: true,
+    ),
+    AlertGroup(
+      name: 'Trusted Circle',
+      responderIds: ['AEGIS-2001'],
+      isSelected: true,
+    ),
+    AlertGroup(
+      name: 'Local Rapid Squad',
+      responderIds: ['AEGIS-9001'],
+      isSelected: false,
+    ),
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _orbitController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 10),
+    )..repeat();
+  }
+
+  @override
   void dispose() {
+    _orbitController.dispose();
     SosAlarmService.instance.stopEmergencySiren();
     super.dispose();
   }
@@ -65,39 +91,56 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
     SosAlarmService.instance.startEmergencySiren();
   }
 
-  void _editConnectionIdsDialog() {
+  String _formatDistanceFromMe(double targetLat, double targetLng) {
+    final meters = Geolocator.distanceBetween(
+      _lat,
+      _lng,
+      targetLat,
+      targetLng,
+    );
+    if (meters < 1000) {
+      return '${meters.round()} m AWAY';
+    }
+    final km = meters / 1000.0;
+    return '${km.toStringAsFixed(2)} km AWAY';
+  }
+
+  List<String> _collectSelectedTargetIds() {
+    final ids = <String>[];
+    for (final g in _alertGroups) {
+      if (g.isSelected) {
+        for (final id in g.responderIds) {
+          final clean = id.trim().toUpperCase();
+          if (clean.isNotEmpty && !ids.contains(clean)) {
+            ids.add(clean);
+          }
+        }
+      }
+    }
+    if (ids.isEmpty) {
+      ids.add(_myResponderId.trim().toUpperCase());
+    }
+    return ids;
+  }
+
+  void _editMyIdDialog() {
     final myIdController = TextEditingController(text: _myResponderId);
-    final sendToController = TextEditingController(text: _sendToResponderId);
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B26),
         title: const Text(
-          'PAIR RESPONDER IDs',
+          'MY RESPONDER ID',
           style: TextStyle(color: Color(0xFF00F0FF), fontSize: 16),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: myIdController,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'My Responder ID (Receive alerts on this ID)',
-                labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: sendToController,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'Send SOS To ID (Partner / Responder ID)',
-                labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
-              ),
-            ),
-          ],
+        content: TextField(
+          controller: myIdController,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            labelText: 'Receive incoming SOS alerts on this ID',
+            labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
+          ),
         ),
         actions: [
           TextButton(
@@ -111,15 +154,15 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
             ),
             onPressed: () {
               final nextMy = myIdController.text.trim().toUpperCase();
-              final nextSendTo = sendToController.text.trim().toUpperCase();
-              setState(() {
-                if (nextMy.isNotEmpty) _myResponderId = nextMy;
-                if (nextSendTo.isNotEmpty) _sendToResponderId = nextSendTo;
-                _lastAlertIdSeen = null;
-              });
+              if (nextMy.isNotEmpty) {
+                setState(() {
+                  _myResponderId = nextMy;
+                  _lastAlertIdSeen = null;
+                });
+              }
               Navigator.pop(ctx);
             },
-            child: const Text('SAVE IDs'),
+            child: const Text('SAVE ID'),
           ),
         ],
       ),
@@ -157,17 +200,16 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
 
   Future<void> _toggleSos() async {
     final nextState = !_isSosActive;
-    final activeGroups = _alertGroups
-        .where((g) => g.isSelected)
-        .map((g) => g.name)
-        .toList();
-    final groupsSummary =
-        activeGroups.isEmpty ? 'All Responders' : activeGroups.join(', ');
+    final selectedGroups = _alertGroups.where((g) => g.isSelected).toList();
+    final targetIds = _collectSelectedTargetIds();
+    final groupsSummary = selectedGroups.isEmpty
+        ? 'Default ID'
+        : selectedGroups.map((g) => g.name).join(', ');
 
     setState(() {
       _isSosActive = nextState;
       _statusText = _isSosActive
-          ? 'SOS ACTIVE • SENDING TO $_sendToResponderId'
+          ? 'SOS ACTIVE • ALERTING ${targetIds.length} TARGET(S)'
           : 'SHIELD ARMED • STANDBY';
     });
 
@@ -187,15 +229,15 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
         setState(() {
           _localTargetLat = _lat;
           _localTargetLng = _lng;
-          _localTargetLabel = 'NEED HELP USER • SENT TO $_sendToResponderId';
-          _localTargetGroupsSummary = groupsSummary;
+          _localTargetLabel = 'DISTRESS SENT • $groupsSummary';
+          _lastSentSummary = '${targetIds.join(", ")} ($groupsSummary)';
           _isPublishingCloud = true;
         });
       }
 
       try {
-        await SosCloudService.instance.publishSosAlert(
-          targetId: _sendToResponderId,
+        await SosCloudService.instance.publishSosToTargets(
+          targetIds: targetIds,
           groupName: groupsSummary,
           latitude: _lat,
           longitude: _lng,
@@ -216,14 +258,14 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
 
   void _showAddGroupDialog() {
     final nameController = TextEditingController();
-    final membersController = TextEditingController(text: '2');
+    final idsController = TextEditingController(text: 'AEGIS-1001');
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B26),
         title: const Text(
-          'NEW ALERT GROUP',
+          'NEW TARGET GROUP',
           style: TextStyle(color: Color(0xFF00F0FF), fontSize: 16),
         ),
         content: Column(
@@ -233,18 +275,19 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
               controller: nameController,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                labelText: 'Group Name (e.g. Hostel Friends)',
+                labelText: 'Group Name (e.g. Hostel Squad)',
                 labelStyle: TextStyle(color: Colors.white60),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: membersController,
-              keyboardType: TextInputType.number,
+              controller: idsController,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                labelText: 'Members Count',
-                labelStyle: TextStyle(color: Colors.white60),
+                labelText: 'Responder IDs (comma separated)',
+                hintText: 'AEGIS-1001, AEGIS-3005',
+                hintStyle: TextStyle(color: Colors.white30, fontSize: 11),
+                labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
               ),
             ),
           ],
@@ -261,11 +304,21 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
             ),
             onPressed: () {
               final name = nameController.text.trim();
-              final count = int.tryParse(membersController.text.trim()) ?? 1;
+              final parsedIds = idsController.text
+                  .split(',')
+                  .map((e) => e.trim().toUpperCase())
+                  .where((e) => e.isNotEmpty)
+                  .toSet()
+                  .toList();
               if (name.isNotEmpty) {
                 setState(() {
                   _alertGroups.add(
-                    AlertGroup(name: name, members: count, isSelected: true),
+                    AlertGroup(
+                      name: name,
+                      responderIds:
+                          parsedIds.isEmpty ? [_myResponderId] : parsedIds,
+                      isSelected: true,
+                    ),
                   );
                 });
               }
@@ -278,44 +331,172 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
     );
   }
 
+  Widget _build3dSosCore(int activeTargetsCount) {
+    return GestureDetector(
+      onLongPress: _toggleSos,
+      child: SizedBox(
+        width: 240,
+        height: 240,
+        child: AnimatedBuilder(
+          animation: _orbitController,
+          builder: (context, child) {
+            final angle = _orbitController.value * 2 * math.pi;
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.0015)
+                    ..rotateX(1.05)
+                    ..rotateZ(angle),
+                  child: Container(
+                    width: 224,
+                    height: 224,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF00F0FF).withValues(alpha: 0.55),
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ),
+                Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.0015)
+                    ..rotateY(0.85)
+                    ..rotateZ(-angle * 1.25),
+                  child: Container(
+                    width: 204,
+                    height: 204,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF7C4DFF).withValues(alpha: 0.6),
+                        width: 1.8,
+                      ),
+                    ),
+                  ),
+                ),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  width: 162,
+                  height: 162,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: _isSosActive
+                          ? [const Color(0xFFFF4D6D), const Color(0xFF800F2F)]
+                          : [const Color(0xFF5C1D38), const Color(0xFF191229)],
+                    ),
+                    border: Border.all(
+                      color: _isSosActive
+                          ? Colors.white
+                          : const Color(0xFFFF2A55).withValues(alpha: 0.85),
+                      width: 3,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFF2A55).withValues(
+                          alpha: _isSosActive ? 0.8 : 0.45,
+                        ),
+                        blurRadius: _isSosActive ? 42 : 26,
+                        spreadRadius: _isSosActive ? 8 : 3,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _isSosActive ? 'HOLD\nDISARM' : 'HOLD\nSOS',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 25,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'ALERT $activeTargetsCount ID(S)',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pings = OfflineVaultService.getAllPings();
+    final selectedTargetIds = _collectSelectedTargetIds();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF070A0F),
+      backgroundColor: const Color(0xFF05080D),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111822),
+        backgroundColor: const Color(0xFF0C121B),
         elevation: 0,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.security, color: Color(0xFF00F0FF), size: 20),
+            const Icon(Icons.shield_outlined, color: Color(0xFF00F0FF), size: 20),
             const SizedBox(width: 8),
             const Text(
-              'AEGIS 3D',
+              'AEGIS',
               style: TextStyle(
-                color: Color(0xFF00F0FF),
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.6,
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
                 fontSize: 16,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E88E5).withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(color: const Color(0xFF42A5F5)),
+              ),
+              child: const Text(
+                '3D',
+                style: TextStyle(
+                  color: Color(0xFF64B5F6),
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: const Color(0xFF00F0FF).withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: const Color(0xFF00F0FF).withValues(alpha: 0.5),
-                ),
+                color: const Color(0xFF0D2822),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF1DE9B6)),
               ),
               child: Text(
-                kIsWeb ? 'WEB PORTAL' : 'MOBILE APP',
+                _isSosActive ? 'SOS ACTIVE' : 'SYSTEM ARMED',
                 style: const TextStyle(
-                  color: Color(0xFF00F0FF),
-                  fontSize: 10,
+                  color: Color(0xFF64FFDA),
+                  fontSize: 9,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -339,34 +520,37 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
               cloudAlert?.latitude ?? (_localTargetLat ?? _lat);
           final double targetLng =
               cloudAlert?.longitude ?? (_localTargetLng ?? _lng);
+          final String distanceBadgeText = hasTarget
+              ? _formatDistanceFromMe(targetLat, targetLng)
+              : 'NO TARGET';
           final bool showActiveAlarmBanner =
               cloudAlert != null && !_alarmAcknowledged;
 
           final String targetLabel = cloudAlert != null
-              ? 'EMERGENCY ALERT • ID ${cloudAlert.targetId} (${cloudAlert.groupName})'
+              ? 'INCOMING SOS • ID ${cloudAlert.targetId} (${cloudAlert.groupName})'
               : _localTargetLabel;
           final String targetDetail = cloudAlert != null
-              ? 'START (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)}'
+              ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)}'
               : (_localTargetLat != null
-                  ? 'START (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${_localTargetLat!.toStringAsFixed(5)}, ${_localTargetLng!.toStringAsFixed(5)}'
-                  : 'Set paired IDs, then HOLD SOS to send & display target location.');
+                  ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${_localTargetLat!.toStringAsFixed(5)}, ${_localTargetLng!.toStringAsFixed(5)}\nSENT TO: $_lastSentSummary'
+                  : 'Select target groups below, then HOLD SOS to alert chosen IDs.');
 
           return Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 500),
+              constraints: const BoxConstraints(maxWidth: 540),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Connection ID Bar
+                    // My Responder ID Strip
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 10,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF111822),
+                        color: const Color(0xFF0E1520),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: const Color(0xFF00F0FF).withValues(alpha: 0.35),
@@ -376,7 +560,8 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              'MY ID: $_myResponderId  |  SEND TO: $_sendToResponderId',
+                              'MY ID: $_myResponderId  •  TARGETS: ${selectedTargetIds.join(", ")}',
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Color(0xFF00F0FF),
                                 fontSize: 11,
@@ -385,9 +570,9 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                             ),
                           ),
                           TextButton(
-                            onPressed: _editConnectionIdsDialog,
+                            onPressed: _editMyIdDialog,
                             child: const Text(
-                              'SET IDs',
+                              'MY ID',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 11,
@@ -433,7 +618,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                                     ),
                                   ),
                                   Text(
-                                    'Target: ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)}',
+                                    '$distanceBadgeText • Target: ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)}',
                                     style: const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 11,
@@ -464,83 +649,101 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                       const SizedBox(height: 14),
                     ],
 
-                    // 1. User Status & Own Coordinates
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF131B26),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: _isSosActive
-                              ? const Color(0xFFFF2A55)
-                              : const Color(0xFF00F0FF).withValues(alpha: 0.4),
-                          width: 1.5,
-                        ),
+                    // 3D Orbital SOS Centerpiece
+                    Center(child: _build3dSosCore(selectedTargetIds.length)),
+
+                    const SizedBox(height: 10),
+
+                    Text(
+                      _isPublishingCloud
+                          ? 'SOS ACTIVE • DISPATCHING TO SELECTED IDs...'
+                          : _statusText,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _isSosActive
+                            ? const Color(0xFFFF2A55)
+                            : const Color(0xFF00F0FF),
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.1,
+                        fontSize: 13,
                       ),
-                      child: Column(
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // Telemetry Bar (GPS / Sync / Vault)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0E1520),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          Text(
-                            _isPublishingCloud
-                                ? 'SOS ACTIVE • SYNCING TO $_sendToResponderId...'
-                                : _statusText,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: _isSosActive
-                                  ? const Color(0xFFFF2A55)
-                                  : const Color(0xFF00F0FF),
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.1,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'START / MY COORDS: ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)} • $_locationSource',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          Column(
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black38,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  'VAULT PINGS: ${pings.length}',
-                                  style: const TextStyle(
-                                    color: Color(0xFF00F0FF),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                              const Text(
+                                'GPS COORDS',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              TextButton.icon(
-                                onPressed:
-                                    _isLocating ? null : _syncLiveCoordinates,
-                                icon: Icon(
-                                  _isLocating
-                                      ? Icons.sync
-                                      : Icons.my_location_outlined,
-                                  size: 16,
-                                  color: const Color(0xFF00F0FF),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${_lat.toStringAsFixed(3)}, ${_lng.toStringAsFixed(3)}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
                                 ),
-                                label: Text(
-                                  _isLocating ? 'LOCKING...' : 'SYNC GPS',
-                                  style: const TextStyle(
-                                    color: Color(0xFF00F0FF),
-                                    fontSize: 11,
-                                  ),
+                              ),
+                            ],
+                          ),
+                          Column(
+                            children: [
+                              const Text(
+                                'SYNC MODE',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _locationSource,
+                                style: const TextStyle(
+                                  color: Color(0xFF00F0FF),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Column(
+                            children: [
+                              const Text(
+                                'VAULT PINGS',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${pings.length}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ],
@@ -549,17 +752,125 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
 
-                    // 2. Responder Screen: Need-Help User Location Card
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _isLocating ? null : _syncLiveCoordinates,
+                        icon: Icon(
+                          _isLocating
+                              ? Icons.sync
+                              : Icons.my_location_outlined,
+                          size: 15,
+                          color: const Color(0xFF00F0FF),
+                        ),
+                        label: Text(
+                          _isLocating ? 'LOCKING GPS...' : 'SYNC LIVE GPS',
+                          style: const TextStyle(
+                            color: Color(0xFF00F0FF),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Targeted Alert Groups (Choose who receives SOS)
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF141C29),
+                        color: const Color(0xFF0E1520),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'GUARDIAN / ALERT GROUPS',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.1,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: _showAddGroupDialog,
+                                icon: const Icon(
+                                  Icons.add_circle_outline,
+                                  size: 16,
+                                  color: Color(0xFF00F0FF),
+                                ),
+                                label: const Text(
+                                  'ADD GROUP',
+                                  style: TextStyle(
+                                    color: Color(0xFF00F0FF),
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          ..._alertGroups.map((group) {
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF141E2E),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: group.isSelected
+                                      ? const Color(0xFF00F0FF)
+                                          .withValues(alpha: 0.45)
+                                      : Colors.transparent,
+                                ),
+                              ),
+                              child: SwitchListTile(
+                                dense: true,
+                                activeThumbColor: const Color(0xFF00F0FF),
+                                title: Text(
+                                  '${group.name} (${group.membersCount} IDs)',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'IDs: ${group.responderIds.join(", ")} • ${group.isSelected ? "WILL RECEIVE SOS" : "EXCLUDED"}',
+                                  style: TextStyle(
+                                    color: group.isSelected
+                                        ? const Color(0xFF00F0FF)
+                                        : Colors.white54,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                                value: group.isSelected,
+                                onChanged: (val) {
+                                  setState(() => group.isSelected = val);
+                                },
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Responder Screen: Need-Help Location Card + Distance Badge
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF121A26),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color: hasTarget
-                              ? const Color(0xFFFF2A55).withValues(alpha: 0.7)
+                              ? const Color(0xFFFF2A55).withValues(alpha: 0.75)
                               : Colors.white12,
                         ),
                       ),
@@ -576,15 +887,40 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                                 size: 18,
                               ),
                               const SizedBox(width: 6),
-                              const Text(
-                                'RESPONDER SCREEN • NEED-HELP LOCATION',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  letterSpacing: 0.8,
+                              const Expanded(
+                                child: Text(
+                                  'RESPONDER SCREEN • NEED-HELP LOCATION',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    letterSpacing: 0.8,
+                                  ),
                                 ),
                               ),
+                              if (hasTarget)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFF2A55)
+                                        .withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: const Color(0xFFFF2A55),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    distanceBadgeText,
+                                    style: const TextStyle(
+                                      color: Color(0xFFFF6B88),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -610,157 +946,9 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 22),
+                    const SizedBox(height: 16),
 
-                    // 3. SOS Trigger Button
-                    Center(
-                      child: GestureDetector(
-                        onLongPress: _toggleSos,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          width: 190,
-                          height: 190,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: _isSosActive
-                                ? const Color(0xFFFF2A55)
-                                : const Color(0xFF162231),
-                            border: Border.all(
-                              color: _isSosActive
-                                  ? Colors.white
-                                  : const Color(0xFFFF2A55),
-                              width: 4,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFFFF2A55).withValues(
-                                  alpha: _isSosActive ? 0.75 : 0.4,
-                                ),
-                                blurRadius: _isSosActive ? 40 : 25,
-                                spreadRadius: _isSosActive ? 8 : 4,
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _isSosActive ? 'HOLD\nDISARM' : 'HOLD\nSOS',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 2,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                const Text(
-                                  'PRESS & HOLD 1.5s',
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 9,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 22),
-
-                    // 4. Alert Groups Section
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF111822),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'ALERT GROUPS',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.2,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              TextButton.icon(
-                                onPressed: _showAddGroupDialog,
-                                icon: const Icon(
-                                  Icons.add_circle_outline,
-                                  size: 16,
-                                  color: Color(0xFF00F0FF),
-                                ),
-                                label: const Text(
-                                  'ADD',
-                                  style: TextStyle(
-                                    color: Color(0xFF00F0FF),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          ..._alertGroups.map((group) {
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF172130),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: group.isSelected
-                                      ? const Color(0xFF00F0FF)
-                                          .withValues(alpha: 0.5)
-                                      : Colors.transparent,
-                                ),
-                              ),
-                              child: SwitchListTile(
-                                dense: true,
-                                activeThumbColor: const Color(0xFF00F0FF),
-                                title: Text(
-                                  group.name,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  '${group.members} responders • ${group.isSelected ? "ARMED" : "MUTED"}',
-                                  style: TextStyle(
-                                    color: group.isSelected
-                                        ? const Color(0xFF00F0FF)
-                                        : Colors.white54,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                                value: group.isSelected,
-                                onChanged: (val) {
-                                  setState(() => group.isSelected = val);
-                                },
-                              ),
-                            );
-                          }),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    // 5. Direct Navigation: Start = My Coords, End = Target Coords
+                    // Direct Navigation to Need-Help User's Location
                     SizedBox(
                       height: 52,
                       child: ElevatedButton.icon(
