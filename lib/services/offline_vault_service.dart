@@ -4,54 +4,61 @@ import '../models/safety_ping.dart';
 class OfflineVaultService {
   OfflineVaultService._();
 
-  static const String _boxName = 'aegis_vault_box';
+  static const String _pingsBoxName = 'safety_pings_box';
+  static const String _configBoxName = 'aegis_config_box';
   static const String _senderIdKey = 'saved_my_sender_id';
   static const String _targetResponseIdKey = 'saved_target_response_id';
 
   static Future<void> init() async {
     await Hive.initFlutter();
-    if (!Hive.isBoxOpen(_boxName)) {
-      await Hive.openBox<dynamic>(_boxName);
+    if (!Hive.isAdapterRegistered(0)) {
+      Hive.registerAdapter(SafetyPingAdapter());
+    }
+    if (!Hive.isBoxOpen(_pingsBoxName)) {
+      await Hive.openBox<SafetyPing>(_pingsBoxName);
+    }
+    if (!Hive.isBoxOpen(_configBoxName)) {
+      await Hive.openBox<dynamic>(_configBoxName);
     }
   }
 
-  static Box<dynamic> get _box => Hive.box<dynamic>(_boxName);
+  static Box<SafetyPing> get _pingsBox => Hive.box<SafetyPing>(_pingsBoxName);
+  static Box<dynamic> get _configBox => Hive.box<dynamic>(_configBoxName);
 
   static Future<void> savePing(SafetyPing ping) async {
-    final existing = getAllPings();
-    existing.add(ping);
-    await _box.put(
-      'pings',
-      existing.map((p) => p.toMap()).toList(),
-    );
+    if (!Hive.isBoxOpen(_pingsBoxName)) return;
+    await _pingsBox.add(ping);
   }
 
   static List<SafetyPing> getAllPings() {
-    if (!Hive.isBoxOpen(_boxName)) return [];
-    final raw = _box.get('pings');
-    if (raw is! List) return [];
-    return raw
-        .whereType()
-        .map((m) => SafetyPing.fromMap(Map<String, dynamic>.from(m)))
-        .toList();
+    if (!Hive.isBoxOpen(_pingsBoxName)) return [];
+    return _pingsBox.values.toList();
   }
 
   static Future<void> saveIds({
     required String mySenderId,
     required String targetResponseId,
   }) async {
-    if (!Hive.isBoxOpen(_boxName)) return;
-    await _box.put(_senderIdKey, mySenderId.trim().toUpperCase());
-    await _box.put(_targetResponseIdKey, targetResponseId.trim().toUpperCase());
+    if (!Hive.isBoxOpen(_configBoxName)) return;
+    await _configBox.put(_senderIdKey, mySenderId.trim().toUpperCase());
+    await _configBox.put(
+      _targetResponseIdKey,
+      targetResponseId.trim().toUpperCase(),
+    );
   }
 
   static ({String mySenderId, String targetResponseId}) getSavedIds() {
-    if (!Hive.isBoxOpen(_boxName)) {
+    if (!Hive.isBoxOpen(_configBoxName)) {
       return (mySenderId: 'SENDER-1', targetResponseId: 'RESP-2');
     }
-    final s = (_box.get(_senderIdKey) ?? 'SENDER-1').toString().trim().toUpperCase();
-    final r =
-        (_box.get(_targetResponseIdKey) ?? 'RESP-2').toString().trim().toUpperCase();
+    final s = (_configBox.get(_senderIdKey) ?? 'SENDER-1')
+        .toString()
+        .trim()
+        .toUpperCase();
+    final r = (_configBox.get(_targetResponseIdKey) ?? 'RESP-2')
+        .toString()
+        .trim()
+        .toUpperCase();
     return (
       mySenderId: s.isEmpty ? 'SENDER-1' : s,
       targetResponseId: r.isEmpty ? 'RESP-2' : r,
