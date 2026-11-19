@@ -56,6 +56,30 @@ class SosCloudService {
     });
   }
 
+  Future<void> publishSosToTargets({
+    required List<String> targetIds,
+    required String groupName,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final uniqueIds = targetIds
+        .map((e) => e.trim().toUpperCase())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+
+    final idsToSend = uniqueIds.isEmpty ? ['AEGIS-1001'] : uniqueIds;
+
+    for (final id in idsToSend) {
+      await publishSosAlert(
+        targetId: id,
+        groupName: groupName,
+        latitude: latitude,
+        longitude: longitude,
+      );
+    }
+  }
+
   Stream<LiveSosAlert?> watchLatestAlertForId(String watchId) {
     final normalizedWatchId = watchId.trim().toUpperCase();
     return _db
