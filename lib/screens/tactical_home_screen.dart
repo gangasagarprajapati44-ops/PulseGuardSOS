@@ -91,20 +91,6 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     SosAlarmService.instance.startEmergencySiren();
   }
 
-  String _formatDistanceFromMe(double targetLat, double targetLng) {
-    final meters = Geolocator.distanceBetween(
-      _lat,
-      _lng,
-      targetLat,
-      targetLng,
-    );
-    if (meters < 1000) {
-      return '${meters.round()} m AWAY';
-    }
-    final km = meters / 1000.0;
-    return '${km.toStringAsFixed(2)} km AWAY';
-  }
-
   List<String> _collectSelectedTargetIds() {
     final ids = <String>[];
     for (final g in _alertGroups) {
@@ -520,9 +506,6 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
               cloudAlert?.latitude ?? (_localTargetLat ?? _lat);
           final double targetLng =
               cloudAlert?.longitude ?? (_localTargetLng ?? _lng);
-          final String distanceBadgeText = hasTarget
-              ? _formatDistanceFromMe(targetLat, targetLng)
-              : 'NO TARGET';
           final bool showActiveAlarmBanner =
               cloudAlert != null && !_alarmAcknowledged;
 
@@ -530,9 +513,9 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
               ? 'INCOMING SOS • ID ${cloudAlert.targetId} (${cloudAlert.groupName})'
               : _localTargetLabel;
           final String targetDetail = cloudAlert != null
-              ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)}'
+              ? 'START (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)}'
               : (_localTargetLat != null
-                  ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${_localTargetLat!.toStringAsFixed(5)}, ${_localTargetLng!.toStringAsFixed(5)}\nSENT TO: $_lastSentSummary'
+                  ? 'START (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${_localTargetLat!.toStringAsFixed(5)}, ${_localTargetLng!.toStringAsFixed(5)}\nSENT TO: $_lastSentSummary'
                   : 'Select target groups below, then HOLD SOS to alert chosen IDs.');
 
           return Center(
@@ -618,7 +601,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                                     ),
                                   ),
                                   Text(
-                                    '$distanceBadgeText • Target: ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)}',
+                                    'Target: ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)}',
                                     style: const TextStyle(
                                       color: Colors.white70,
                                       fontSize: 11,
@@ -862,7 +845,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
 
                     const SizedBox(height: 16),
 
-                    // Responder Screen: Need-Help Location Card + Distance Badge
+                    // Responder Screen: Need-Help Location Card
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -887,40 +870,15 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                                 size: 18,
                               ),
                               const SizedBox(width: 6),
-                              const Expanded(
-                                child: Text(
-                                  'RESPONDER SCREEN • NEED-HELP LOCATION',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    letterSpacing: 0.8,
-                                  ),
+                              const Text(
+                                'RESPONDER SCREEN • NEED-HELP LOCATION',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  letterSpacing: 0.8,
                                 ),
                               ),
-                              if (hasTarget)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFF2A55)
-                                        .withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: const Color(0xFFFF2A55),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    distanceBadgeText,
-                                    style: const TextStyle(
-                                      color: Color(0xFFFF6B88),
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
                             ],
                           ),
                           const SizedBox(height: 8),
