@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import '../models/safety_ping.dart';
 import '../services/offline_vault_service.dart';
 import '../services/rescue_nav_service.dart';
+import '../services/sos_alarm_service.dart';
 import '../services/sos_cloud_service.dart';
 
 class AlertGroup {
@@ -29,12 +30,17 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
   bool _isSosActive = false;
   bool _isLocating = false;
   bool _isPublishingCloud = false;
+  bool _alarmAcknowledged = false;
+  String? _lastAlertIdSeen;
+
+  String _myResponderId = 'AEGIS-1001';
+  String _sendToResponderId = 'AEGIS-1001';
+
   String _statusText = 'SHIELD ARMED • STANDBY';
   String _locationSource = 'DEFAULT SECTOR';
   double _lat = 25.5941;
   double _lng = 85.1376;
 
-  // Fallback local target location if cloud stream has no alert yet
   double? _localTargetLat;
   double? _localTargetLng;
   String _localTargetLabel = 'NO ACTIVE DISTRESS SIGNAL';
@@ -45,6 +51,80 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
     AlertGroup(name: 'Trusted Circle', members: 3, isSelected: true),
     AlertGroup(name: 'Local Rapid Squad', members: 5, isSelected: false),
   ];
+
+  @override
+  void dispose() {
+    SosAlarmService.instance.stopEmergencySiren();
+    super.dispose();
+  }
+
+  void _handleIncomingAlert(LiveSosAlert alert) {
+    if (_lastAlertIdSeen == alert.id) return;
+    _lastAlertIdSeen = alert.id;
+    _alarmAcknowledged = false;
+    SosAlarmService.instance.startEmergencySiren();
+  }
+
+  void _editConnectionIdsDialog() {
+    final myIdController = TextEditingController(text: _myResponderId);
+    final sendToController = TextEditingController(text: _sendToResponderId);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131B26),
+        title: const Text(
+          'PAIR RESPONDER IDs',
+          style: TextStyle(color: Color(0xFF00F0FF), fontSize: 16),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: myIdController,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'My Responder ID (Receive alerts on this ID)',
+                labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: sendToController,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Send SOS To ID (Partner / Responder ID)',
+                labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCEL', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00F0FF),
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () {
+              final nextMy = myIdController.text.trim().toUpperCase();
+              final nextSendTo = sendToController.text.trim().toUpperCase();
+              setState(() {
+                if (nextMy.isNotEmpty) _myResponderId = nextMy;
+                if (nextSendTo.isNotEmpty) _sendToResponderId = nextSendTo;
+                _lastAlertIdSeen = null;
+              });
+              Navigator.pop(ctx);
+            },
+            child: const Text('SAVE IDs'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _syncLiveCoordinates() async {
     setState(() => _isLocating = true);
@@ -87,7 +167,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
     setState(() {
       _isSosActive = nextState;
       _statusText = _isSosActive
-          ? 'SOS ACTIVE • SENDING LIVE LOCATION'
+          ? 'SOS ACTIVE • SENDING TO $_sendToResponderId'
           : 'SHIELD ARMED • STANDBY';
     });
 
@@ -107,7 +187,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
         setState(() {
           _localTargetLat = _lat;
           _localTargetLng = _lng;
-          _localTargetLabel = 'NEED HELP USER • AUTO LOCATION SHARED';
+          _localTargetLabel = 'NEED HELP USER • SENT TO $_sendToResponderId';
           _localTargetGroupsSummary = groupsSummary;
           _isPublishingCloud = true;
         });
@@ -115,6 +195,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
 
       try {
         await SosCloudService.instance.publishSosAlert(
+          targetId: _sendToResponderId,
           groupName: groupsSummary,
           latitude: _lat,
           longitude: _lng,
@@ -244,20 +325,31 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
         centerTitle: true,
       ),
       body: StreamBuilder<LiveSosAlert?>(
-        stream: SosCloudService.instance.watchLatestAlert(),
+        stream: SosCloudService.instance.watchLatestAlertForId(_myResponderId),
         builder: (context, snapshot) {
           final cloudAlert = snapshot.data;
+          if (cloudAlert != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _handleIncomingAlert(cloudAlert);
+            });
+          }
+
           final bool hasTarget = cloudAlert != null || _localTargetLat != null;
-          final double targetLat = cloudAlert?.latitude ?? (_localTargetLat ?? _lat);
-          final double targetLng = cloudAlert?.longitude ?? (_localTargetLng ?? _lng);
+          final double targetLat =
+              cloudAlert?.latitude ?? (_localTargetLat ?? _lat);
+          final double targetLng =
+              cloudAlert?.longitude ?? (_localTargetLng ?? _lng);
+          final bool showActiveAlarmBanner =
+              cloudAlert != null && !_alarmAcknowledged;
+
           final String targetLabel = cloudAlert != null
-              ? 'LIVE CLOUD DISTRESS • ${cloudAlert.groupName}'
+              ? 'EMERGENCY ALERT • ID ${cloudAlert.targetId} (${cloudAlert.groupName})'
               : _localTargetLabel;
           final String targetDetail = cloudAlert != null
-              ? 'TARGET: ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)} • SENT TO: ${cloudAlert.groupName}'
+              ? 'START (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)}'
               : (_localTargetLat != null
-                  ? 'TARGET: ${_localTargetLat!.toStringAsFixed(5)}, ${_localTargetLng!.toStringAsFixed(5)} • SENT TO: $_localTargetGroupsSummary'
-                  : 'HOLD SOS to auto-share & display exact target coordinates here.');
+                  ? 'START (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${_localTargetLat!.toStringAsFixed(5)}, ${_localTargetLng!.toStringAsFixed(5)}'
+                  : 'Set paired IDs, then HOLD SOS to send & display target location.');
 
           return Center(
             child: ConstrainedBox(
@@ -267,6 +359,111 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Connection ID Bar
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF111822),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF00F0FF).withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'MY ID: $_myResponderId  |  SEND TO: $_sendToResponderId',
+                              style: const TextStyle(
+                                color: Color(0xFF00F0FF),
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _editConnectionIdsDialog,
+                            child: const Text(
+                              'SET IDs',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    if (showActiveAlarmBanner) ...[
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4A0815),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: const Color(0xFFFF2A55),
+                            width: 2,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.campaign,
+                              color: Color(0xFFFF2A55),
+                              size: 30,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'EMERGENCY SOS SIREN ACTIVE!',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Target: ${cloudAlert.latitude.toStringAsFixed(5)}, ${cloudAlert.longitude.toStringAsFixed(5)}',
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                SosAlarmService.instance.stopEmergencySiren();
+                                setState(() {
+                                  _alarmAcknowledged = true;
+                                });
+                              },
+                              child: const Text(
+                                'STOP SIREN',
+                                style: TextStyle(
+                                  color: Color(0xFF00F0FF),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+
                     // 1. User Status & Own Coordinates
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -284,7 +481,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                         children: [
                           Text(
                             _isPublishingCloud
-                                ? 'SOS ACTIVE • SYNCING TO FIREBASE...'
+                                ? 'SOS ACTIVE • SYNCING TO $_sendToResponderId...'
                                 : _statusText,
                             textAlign: TextAlign.center,
                             style: TextStyle(
@@ -298,7 +495,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'MY COORDS: ${_lat.toStringAsFixed(4)}, ${_lng.toStringAsFixed(4)} • $_locationSource',
+                            'START / MY COORDS: ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)} • $_locationSource',
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Colors.white70,
@@ -354,7 +551,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
 
                     const SizedBox(height: 16),
 
-                    // 2. Responder Screen: Need-Help User Location Card (Real-time Cloud)
+                    // 2. Responder Screen: Need-Help User Location Card
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -563,7 +760,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
 
                     const SizedBox(height: 18),
 
-                    // 5. Direct Navigation to Need-Help User's Location
+                    // 5. Direct Navigation: Start = My Coords, End = Target Coords
                     SizedBox(
                       height: 52,
                       child: ElevatedButton.icon(
@@ -579,6 +776,8 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen> {
                               await RescueNavService.navigateToTargetLocation(
                             targetLat,
                             targetLng,
+                            originLat: _lat,
+                            originLng: _lng,
                           );
                           if (!opened && context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
