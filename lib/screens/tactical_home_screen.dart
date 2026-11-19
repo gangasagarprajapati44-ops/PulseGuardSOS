@@ -8,18 +8,18 @@ import '../services/rescue_nav_service.dart';
 import '../services/sos_alarm_service.dart';
 import '../services/sos_cloud_service.dart';
 
-class AlertGroup {
+class ResponseGroup {
   final String name;
-  final List<String> responderIds;
-  bool isSelected;
+  final List<String> responseIds;
+  bool isTicked;
 
-  AlertGroup({
+  ResponseGroup({
     required this.name,
-    required this.responderIds,
-    this.isSelected = true,
+    required this.responseIds,
+    this.isTicked = false,
   });
 
-  int get membersCount => responderIds.length;
+  int get idsCount => responseIds.length;
 }
 
 class TacticalHomeScreen extends StatefulWidget {
@@ -31,7 +31,7 @@ class TacticalHomeScreen extends StatefulWidget {
 
 class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _orbitController;
+  late final AnimationController _dimensionController;
 
   bool _isSosActive = false;
   bool _isLocating = false;
@@ -39,9 +39,9 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
   bool _alarmAcknowledged = false;
   String? _lastTriggeredAlertKey;
 
-  // Separate IDs: Sender (help seeker) vs Responder (helper receiving alerts)
-  String _mySenderId = 'SOS-1001';
-  String _myResponderId = 'RES-2001';
+  // Separate IDs for each user: Sender ID vs Response ID
+  String _mySenderId = 'SENDER-1';
+  String _myResponseId = 'RESP-1';
 
   String _statusText = 'SHIELD ARMED • STANDBY';
   String _locationSource = 'DEFAULT SECTOR';
@@ -53,43 +53,43 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
   String _localTargetLabel = 'NO ACTIVE DISTRESS SIGNAL';
   String _lastSentSummary = '';
 
-  final List<AlertGroup> _alertGroups = [
-    AlertGroup(
-      name: 'Family Shield',
-      responderIds: ['RES-2001'],
-      isSelected: true,
+  final List<ResponseGroup> _responseGroups = [
+    ResponseGroup(
+      name: 'User 2 Direct Response',
+      responseIds: ['RESP-2'],
+      isTicked: true,
     ),
-    AlertGroup(
-      name: 'Trusted Circle',
-      responderIds: ['RES-2002'],
-      isSelected: false,
+    ResponseGroup(
+      name: 'Family Response Squad',
+      responseIds: ['RESP-3', 'RESP-4'],
+      isTicked: false,
     ),
-    AlertGroup(
-      name: 'Local Rapid Squad',
-      responderIds: ['RES-9001'],
-      isSelected: false,
+    ResponseGroup(
+      name: 'Emergency Backup Circle',
+      responseIds: ['RESP-9'],
+      isTicked: false,
     ),
   ];
 
   @override
   void initState() {
     super.initState();
-    _orbitController = AnimationController(
+    _dimensionController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 10),
+      duration: const Duration(seconds: 8),
     )..repeat();
   }
 
   @override
   void dispose() {
-    _orbitController.dispose();
+    _dimensionController.dispose();
     SosAlarmService.instance.stopEmergencySiren();
     super.dispose();
   }
 
   void _handleIncomingAlert(LiveSosAlert alert) {
-    // Never sound alarm on the device that sent this SOS
-    if (alert.senderId.trim().toUpperCase() == _mySenderId.trim().toUpperCase()) {
+    if (alert.senderId.trim().toUpperCase() ==
+        _mySenderId.trim().toUpperCase()) {
       return;
     }
 
@@ -114,13 +114,16 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     return '${km.toStringAsFixed(2)} km AWAY';
   }
 
-  List<String> _collectSelectedTargetIds() {
+  List<String> _collectTickedResponseIds() {
     final ids = <String>[];
-    for (final g in _alertGroups) {
-      if (g.isSelected) {
-        for (final id in g.responderIds) {
+    final myRespClean = _myResponseId.trim().toUpperCase();
+    for (final g in _responseGroups) {
+      if (g.isTicked) {
+        for (final id in g.responseIds) {
           final clean = id.trim().toUpperCase();
-          if (clean.isNotEmpty && !ids.contains(clean)) {
+          if (clean.isNotEmpty &&
+              clean != myRespClean &&
+              !ids.contains(clean)) {
             ids.add(clean);
           }
         }
@@ -129,125 +132,68 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     return ids;
   }
 
-  void _editCustomIdsDialog() {
+  void _editIdsDialog() {
     final senderController = TextEditingController(text: _mySenderId);
-    final responderController = TextEditingController(text: _myResponderId);
-    String? errorMsg;
-    bool checking = false;
+    final responseController = TextEditingController(text: _myResponseId);
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (innerCtx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF131B26),
-          title: const Text(
-            'CUSTOM SENDER & RESPONDER IDs',
-            style: TextStyle(color: Color(0xFF00F0FF), fontSize: 15),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: senderController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: 'My Sender ID (When YOU need help)',
-                  hintText: 'e.g. SOS-GANGA-01',
-                  hintStyle: TextStyle(color: Colors.white30, fontSize: 11),
-                  labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
-                ),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131B26),
+        title: const Text(
+          'SET SENDER ID & RESPONSE ID',
+          style: TextStyle(color: Color(0xFF00F0FF), fontSize: 15),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: senderController,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'My Sender ID (Your SOS Identity)',
+                hintText: 'e.g. SENDER-1',
+                hintStyle: TextStyle(color: Colors.white30, fontSize: 11),
+                labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: responderController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: 'My Responder ID (Receive others\' SOS)',
-                  hintText: 'e.g. RES-GUARD-01',
-                  hintStyle: TextStyle(color: Colors.white30, fontSize: 11),
-                  labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
-                ),
-              ),
-              if (errorMsg != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  errorMsg!,
-                  style: const TextStyle(
-                    color: Color(0xFFFF4D6D),
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child:
-                  const Text('CANCEL', style: TextStyle(color: Colors.white54)),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00F0FF),
-                foregroundColor: Colors.black,
+            const SizedBox(height: 12),
+            TextField(
+              controller: responseController,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'My Response ID (Alarm rings here when others send SOS)',
+                hintText: 'e.g. RESP-1',
+                hintStyle: TextStyle(color: Colors.white30, fontSize: 11),
+                labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
               ),
-              onPressed: checking
-                  ? null
-                  : () async {
-                      final nextSender =
-                          senderController.text.trim().toUpperCase();
-                      final nextResponder =
-                          responderController.text.trim().toUpperCase();
-
-                      if (nextSender.isEmpty || nextResponder.isEmpty) {
-                        setDialogState(() {
-                          errorMsg = 'Both Sender ID and Responder ID are required.';
-                        });
-                        return;
-                      }
-
-                      if (nextSender == nextResponder) {
-                        setDialogState(() {
-                          errorMsg =
-                              'Sender ID and Responder ID should be different to avoid self-alarm.';
-                        });
-                        return;
-                      }
-
-                      setDialogState(() {
-                        checking = true;
-                        errorMsg = null;
-                      });
-
-                      bool taken = false;
-                      if (nextSender != _mySenderId) {
-                        try {
-                          taken = await SosCloudService.instance
-                              .isSenderIdTaken(nextSender);
-                        } catch (_) {}
-                      }
-
-                      if (taken) {
-                        setDialogState(() {
-                          checking = false;
-                          errorMsg =
-                              'Sender ID "$nextSender" already exists in cloud history. Choose a unique ID.';
-                        });
-                        return;
-                      }
-
-                      setState(() {
-                        _mySenderId = nextSender;
-                        _myResponderId = nextResponder;
-                        _lastTriggeredAlertKey = null;
-                      });
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    },
-              child: Text(checking ? 'CHECKING...' : 'SAVE UNIQUE IDs'),
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child:
+                const Text('CANCEL', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00F0FF),
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () {
+              final nextSender = senderController.text.trim().toUpperCase();
+              final nextResponse = responseController.text.trim().toUpperCase();
+              setState(() {
+                if (nextSender.isNotEmpty) _mySenderId = nextSender;
+                if (nextResponse.isNotEmpty) _myResponseId = nextResponse;
+                _lastTriggeredAlertKey = null;
+              });
+              Navigator.pop(ctx);
+            },
+            child: const Text('SAVE IDs'),
+          ),
+        ],
       ),
     );
   }
@@ -282,39 +228,34 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
   }
 
   Future<void> _toggleSos() async {
+    final tickedGroups = _responseGroups.where((g) => g.isTicked).toList();
+    final targetResponseIds = _collectTickedResponseIds();
+
+    if (targetResponseIds.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Please TICK at least one Response Group to send SOS alarm.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     final nextState = !_isSosActive;
-    final selectedGroups = _alertGroups.where((g) => g.isSelected).toList();
-    final targetIds = _collectSelectedTargetIds();
-    final groupsSummary = selectedGroups.isEmpty
-        ? 'No Group Selected'
-        : selectedGroups.map((g) => g.name).join(', ');
+    final groupsSummary =
+        tickedGroups.map((g) => g.name).join(', ');
 
     setState(() {
       _isSosActive = nextState;
       _statusText = _isSosActive
-          ? 'SOS ACTIVE • SENDING FROM $_mySenderId'
+          ? 'SOS ACTIVE • ALARM SENT TO ${targetResponseIds.join(", ")}'
           : 'SHIELD ARMED • STANDBY';
     });
 
     if (_isSosActive) {
-      // Ensure sender never triggers self-alarm even if they accidentally list their own responder ID
-      final safeTargets = targetIds
-          .where((id) => id != _myResponderId.trim().toUpperCase())
-          .toList();
-
-      if (safeTargets.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Select a group with another Responder ID to send SOS.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-
       await _syncLiveCoordinates();
 
       final ping = SafetyPing(
@@ -330,16 +271,17 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
         setState(() {
           _localTargetLat = _lat;
           _localTargetLng = _lng;
-          _localTargetLabel = 'OUTGOING SOS • FROM $_mySenderId ($groupsSummary)';
-          _lastSentSummary = '${safeTargets.join(", ")} ($groupsSummary)';
+          _localTargetLabel =
+              'OUTGOING SOS FROM $_mySenderId • $groupsSummary';
+          _lastSentSummary = '${targetResponseIds.join(", ")} ($groupsSummary)';
           _isPublishingCloud = true;
         });
       }
 
       try {
-        await SosCloudService.instance.publishSosToTargets(
+        await SosCloudService.instance.publishSosToResponseIds(
           senderId: _mySenderId,
-          targetIds: safeTargets,
+          responseIds: targetResponseIds,
           groupName: groupsSummary,
           latitude: _lat,
           longitude: _lng,
@@ -358,16 +300,16 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     }
   }
 
-  void _showAddGroupDialog() {
+  void _showAddResponseGroupDialog() {
     final nameController = TextEditingController();
-    final idsController = TextEditingController(text: 'RES-2001');
+    final idsController = TextEditingController(text: 'RESP-2');
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B26),
         title: const Text(
-          'NEW RESPONDER GROUP',
+          'NEW RESPONSE GROUP',
           style: TextStyle(color: Color(0xFF00F0FF), fontSize: 16),
         ),
         content: Column(
@@ -377,7 +319,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
               controller: nameController,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                labelText: 'Group Name (e.g. Family / Friends)',
+                labelText: 'Response Group Name',
                 labelStyle: TextStyle(color: Colors.white60),
               ),
             ),
@@ -386,8 +328,8 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
               controller: idsController,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                labelText: 'Responder IDs (comma separated)',
-                hintText: 'RES-2001, RES-3005',
+                labelText: 'Response IDs (comma separated)',
+                hintText: 'RESP-2, RESP-5',
                 hintStyle: TextStyle(color: Colors.white30, fontSize: 11),
                 labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
               ),
@@ -414,11 +356,11 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                   .toList();
               if (name.isNotEmpty && parsedIds.isNotEmpty) {
                 setState(() {
-                  _alertGroups.add(
-                    AlertGroup(
+                  _responseGroups.add(
+                    ResponseGroup(
                       name: name,
-                      responderIds: parsedIds,
-                      isSelected: true,
+                      responseIds: parsedIds,
+                      isTicked: true,
                     ),
                   );
                 });
@@ -432,55 +374,92 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     );
   }
 
-  Widget _build3dSosCore(int activeTargetsCount) {
+  Widget _buildMultiDimensionalSosButton(int tickedTargetsCount) {
     return GestureDetector(
       onLongPress: _toggleSos,
       child: SizedBox(
-        width: 240,
-        height: 240,
+        width: 260,
+        height: 260,
         child: AnimatedBuilder(
-          animation: _orbitController,
+          animation: _dimensionController,
           builder: (context, child) {
-            final angle = _orbitController.value * 2 * math.pi;
+            final t = _dimensionController.value;
+            final angle = t * 2 * math.pi;
+            final pulse4d = 0.5 + 0.5 * math.sin(t * 4 * math.pi);
+
             return Stack(
               alignment: Alignment.center,
               children: [
+                // 5D Outer Hyper-Aura Glow
+                Container(
+                  width: 248 + (pulse4d * 10),
+                  height: 248 + (pulse4d * 10),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        const Color(0xFFFF2A55)
+                            .withValues(alpha: 0.14 + pulse4d * 0.12),
+                        const Color(0xFF00F0FF).withValues(alpha: 0.04),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+                // 3D Gimbal Ring X/Z
                 Transform(
                   alignment: Alignment.center,
                   transform: Matrix4.identity()
-                    ..setEntry(3, 2, 0.0015)
-                    ..rotateX(1.05)
+                    ..setEntry(3, 2, 0.0018)
+                    ..rotateX(1.1)
                     ..rotateZ(angle),
                   child: Container(
-                    width: 224,
-                    height: 224,
+                    width: 232,
+                    height: 232,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: const Color(0xFF00F0FF).withValues(alpha: 0.55),
+                        color: const Color(0xFF00F0FF).withValues(alpha: 0.7),
+                        width: 2.2,
+                      ),
+                    ),
+                  ),
+                ),
+                // 4D Counter-Gyro Ring Y/Z
+                Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.0018)
+                    ..rotateY(0.95)
+                    ..rotateZ(-angle * 1.35),
+                  child: Container(
+                    width: 210,
+                    height: 210,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFFFF4D6D).withValues(alpha: 0.65),
                         width: 2,
                       ),
                     ),
                   ),
                 ),
-                Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()
-                    ..setEntry(3, 2, 0.0015)
-                    ..rotateY(0.85)
-                    ..rotateZ(-angle * 1.25),
+                // 5D Core Tesseract-Style Frame
+                Transform.rotate(
+                  angle: angle * 0.5,
                   child: Container(
-                    width: 204,
-                    height: 204,
+                    width: 184,
+                    height: 184,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(42),
                       border: Border.all(
-                        color: const Color(0xFF7C4DFF).withValues(alpha: 0.6),
-                        width: 1.8,
+                        color: const Color(0xFF7C4DFF).withValues(alpha: 0.55),
+                        width: 1.5,
                       ),
                     ),
                   ),
                 ),
+                // Core SOS Button
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
                   width: 162,
@@ -489,22 +468,22 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
                       colors: _isSosActive
-                          ? [const Color(0xFFFF4D6D), const Color(0xFF800F2F)]
-                          : [const Color(0xFF5C1D38), const Color(0xFF191229)],
+                          ? [const Color(0xFFFF5C7A), const Color(0xFF7A0926)]
+                          : [const Color(0xFF7A1534), const Color(0xFF140D22)],
                     ),
                     border: Border.all(
                       color: _isSosActive
                           ? Colors.white
-                          : const Color(0xFFFF2A55).withValues(alpha: 0.85),
-                      width: 3,
+                          : const Color(0xFFFF2A55),
+                      width: 3.5,
                     ),
                     boxShadow: [
                       BoxShadow(
                         color: const Color(0xFFFF2A55).withValues(
-                          alpha: _isSosActive ? 0.8 : 0.45,
+                          alpha: _isSosActive ? 0.85 : 0.5,
                         ),
-                        blurRadius: _isSosActive ? 42 : 26,
-                        spreadRadius: _isSosActive ? 8 : 3,
+                        blurRadius: _isSosActive ? 46 : 28,
+                        spreadRadius: _isSosActive ? 9 : 4,
                       ),
                     ],
                   ),
@@ -512,6 +491,16 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        const Text(
+                          '3D•4D•5D',
+                          style: TextStyle(
+                            color: Color(0xFF00F0FF),
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
                         Text(
                           _isSosActive ? 'HOLD\nDISARM' : 'HOLD\nSOS',
                           textAlign: TextAlign.center,
@@ -522,9 +511,9 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                             letterSpacing: 2,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 3),
                         Text(
-                          'ALERT $activeTargetsCount RESPONDER(S)',
+                          '$tickedTargetsCount TICKED ID(S)',
                           style: const TextStyle(
                             color: Colors.white70,
                             fontSize: 8.5,
@@ -547,7 +536,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
   @override
   Widget build(BuildContext context) {
     final pings = OfflineVaultService.getAllPings();
-    final selectedTargetIds = _collectSelectedTargetIds();
+    final tickedResponseIds = _collectTickedResponseIds();
 
     return Scaffold(
       backgroundColor: const Color(0xFF05080D),
@@ -577,10 +566,10 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                 border: Border.all(color: const Color(0xFF42A5F5)),
               ),
               child: const Text(
-                '3D',
+                '3D/4D/5D',
                 style: TextStyle(
                   color: Color(0xFF64B5F6),
-                  fontSize: 10,
+                  fontSize: 9.5,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -607,40 +596,37 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
         centerTitle: true,
       ),
       body: StreamBuilder<LiveSosAlert?>(
-        stream: SosCloudService.instance.watchLatestAlertForId(_myResponderId),
+        stream: SosCloudService.instance
+            .watchIncomingAlertForMyResponseId(_myResponseId, _mySenderId),
         builder: (context, snapshot) {
           final incomingAlert = snapshot.data;
-          final bool isFromOtherSender = incomingAlert != null &&
-              incomingAlert.senderId.trim().toUpperCase() !=
-                  _mySenderId.trim().toUpperCase();
-
-          if (isFromOtherSender) {
+          if (incomingAlert != null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _handleIncomingAlert(incomingAlert);
             });
           }
 
-          final bool hasTarget = isFromOtherSender || _localTargetLat != null;
-          final double targetLat = isFromOtherSender
+          final bool hasTarget = incomingAlert != null || _localTargetLat != null;
+          final double targetLat = incomingAlert != null
               ? incomingAlert.latitude
               : (_localTargetLat ?? _lat);
-          final double targetLng = isFromOtherSender
+          final double targetLng = incomingAlert != null
               ? incomingAlert.longitude
               : (_localTargetLng ?? _lng);
           final String distanceBadgeText = hasTarget
               ? _formatDistanceFromMe(targetLat, targetLng)
               : 'NO TARGET';
           final bool showActiveAlarmBanner =
-              isFromOtherSender && !_alarmAcknowledged;
+              incomingAlert != null && !_alarmAcknowledged;
 
-          final String targetLabel = isFromOtherSender
-              ? 'NEED HELP • FROM ${incomingAlert.senderId} (${incomingAlert.groupName})'
+          final String targetLabel = incomingAlert != null
+              ? 'INCOMING SOS • FROM ${incomingAlert.senderId} (${incomingAlert.groupName})'
               : _localTargetLabel;
-          final String targetDetail = isFromOtherSender
+          final String targetDetail = incomingAlert != null
               ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${incomingAlert.latitude.toStringAsFixed(5)}, ${incomingAlert.longitude.toStringAsFixed(5)}'
               : (_localTargetLat != null
-                  ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${_localTargetLat!.toStringAsFixed(5)}, ${_localTargetLng!.toStringAsFixed(5)}\nSENT TO: $_lastSentSummary'
-                  : 'Set your custom Sender/Responder IDs, choose groups, then HOLD SOS.');
+                  ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${_localTargetLat!.toStringAsFixed(5)}, ${_localTargetLng!.toStringAsFixed(5)}\nSENT TO RESPONSE IDs: $_lastSentSummary'
+                  : 'Tick Response Groups below, then HOLD SOS to trigger alarm on chosen Response IDs.');
 
           return Center(
             child: ConstrainedBox(
@@ -650,7 +636,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Sender ID & Responder ID Strip
+                    // Separate Sender ID & Response ID Strip
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
@@ -667,7 +653,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                         children: [
                           Expanded(
                             child: Text(
-                              'SENDER ID: $_mySenderId  •  RESPONDER ID: $_myResponderId',
+                              'SENDER ID: $_mySenderId  |  RESPONSE ID: $_myResponseId',
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Color(0xFF00F0FF),
@@ -677,9 +663,9 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                             ),
                           ),
                           TextButton(
-                            onPressed: _editCustomIdsDialog,
+                            onPressed: _editIdsDialog,
                             child: const Text(
-                              'EDIT IDs',
+                              'SET IDs',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 11,
@@ -717,7 +703,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'SOS FROM ${incomingAlert.senderId}!',
+                                    'SOS ALARM FROM ${incomingAlert.senderId}!',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w900,
@@ -756,14 +742,18 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                       const SizedBox(height: 14),
                     ],
 
-                    // 3D Orbital SOS Centerpiece
-                    Center(child: _build3dSosCore(selectedTargetIds.length)),
+                    // 3D / 4D / 5D Special SOS Button
+                    Center(
+                      child: _buildMultiDimensionalSosButton(
+                        tickedResponseIds.length,
+                      ),
+                    ),
 
                     const SizedBox(height: 10),
 
                     Text(
                       _isPublishingCloud
-                          ? 'SOS ACTIVE • SENDING FROM $_mySenderId...'
+                          ? 'SOS ACTIVE • SENDING TO TICKED RESPONSE IDs...'
                           : _statusText,
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -772,7 +762,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                             : const Color(0xFF00F0FF),
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.1,
-                        fontSize: 13,
+                        fontSize: 12.5,
                       ),
                     ),
 
@@ -882,7 +872,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                       ),
                     ),
 
-                    // Targeted Responder Groups
+                    // Response Groups with Tick (Checkbox)
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -897,23 +887,23 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               const Text(
-                                'RESPONDER GROUPS',
+                                'RESPONSE GROUPS (TICK TO ALERT)',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.1,
+                                  letterSpacing: 1.0,
                                   fontSize: 12,
                                 ),
                               ),
                               TextButton.icon(
-                                onPressed: _showAddGroupDialog,
+                                onPressed: _showAddResponseGroupDialog,
                                 icon: const Icon(
                                   Icons.add_circle_outline,
                                   size: 16,
                                   color: Color(0xFF00F0FF),
                                 ),
                                 label: const Text(
-                                  'ADD GROUP',
+                                  'ADD',
                                   style: TextStyle(
                                     color: Color(0xFF00F0FF),
                                     fontSize: 11,
@@ -923,24 +913,25 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                             ],
                           ),
                           const SizedBox(height: 6),
-                          ..._alertGroups.map((group) {
+                          ..._responseGroups.map((group) {
                             return Container(
                               margin: const EdgeInsets.only(bottom: 8),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF141E2E),
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
-                                  color: group.isSelected
+                                  color: group.isTicked
                                       ? const Color(0xFF00F0FF)
-                                          .withValues(alpha: 0.45)
+                                          .withValues(alpha: 0.6)
                                       : Colors.transparent,
                                 ),
                               ),
-                              child: SwitchListTile(
+                              child: CheckboxListTile(
                                 dense: true,
-                                activeThumbColor: const Color(0xFF00F0FF),
+                                activeColor: const Color(0xFF00F0FF),
+                                checkColor: Colors.black,
                                 title: Text(
-                                  '${group.name} (${group.membersCount} IDs)',
+                                  '${group.name} (${group.idsCount} ID)',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,
@@ -948,17 +939,19 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                                   ),
                                 ),
                                 subtitle: Text(
-                                  'Responders: ${group.responderIds.join(", ")} • ${group.isSelected ? "ARMED" : "MUTED"}',
+                                  'Response IDs: ${group.responseIds.join(", ")} • ${group.isTicked ? "TICKED (WILL RING)" : "UNTICKED"}',
                                   style: TextStyle(
-                                    color: group.isSelected
+                                    color: group.isTicked
                                         ? const Color(0xFF00F0FF)
                                         : Colors.white54,
                                     fontSize: 10,
                                   ),
                                 ),
-                                value: group.isSelected,
+                                value: group.isTicked,
                                 onChanged: (val) {
-                                  setState(() => group.isSelected = val);
+                                  setState(
+                                    () => group.isTicked = val ?? false,
+                                  );
                                 },
                               ),
                             );
