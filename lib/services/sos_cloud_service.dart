@@ -2,6 +2,7 @@
 
 class LiveSosAlert {
   final String id;
+  final String senderId;
   final String targetId;
   final String groupName;
   final double latitude;
@@ -10,6 +11,7 @@ class LiveSosAlert {
 
   LiveSosAlert({
     required this.id,
+    required this.senderId,
     required this.targetId,
     required this.groupName,
     required this.latitude,
@@ -24,7 +26,8 @@ class LiveSosAlert {
     final ts = data['timestamp'];
     return LiveSosAlert(
       id: doc.id,
-      targetId: (data['targetId'] ?? 'AEGIS-1001').toString().toUpperCase(),
+      senderId: (data['senderId'] ?? 'UNKNOWN-SENDER').toString().toUpperCase(),
+      targetId: (data['targetId'] ?? 'RES-1001').toString().toUpperCase(),
       groupName: (data['groupName'] ?? 'EMERGENCY GROUP').toString(),
       latitude: ((data['latitude'] ?? 0) as num).toDouble(),
       longitude: ((data['longitude'] ?? 0) as num).toDouble(),
@@ -39,15 +42,29 @@ class SosCloudService {
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  Future<bool> isSenderIdTaken(String candidateId) async {
+    final clean = candidateId.trim().toUpperCase();
+    if (clean.isEmpty) return false;
+    final snap = await _db
+        .collection('sos_alerts')
+        .where('senderId', isEqualTo: clean)
+        .limit(1)
+        .get();
+    return snap.docs.isNotEmpty;
+  }
+
   Future<void> publishSosAlert({
+    required String senderId,
     required String targetId,
     required String groupName,
     required double latitude,
     required double longitude,
   }) async {
-    final cleanId = targetId.trim().toUpperCase();
+    final cleanSender = senderId.trim().toUpperCase();
+    final cleanTarget = targetId.trim().toUpperCase();
     await _db.collection('sos_alerts').add({
-      'targetId': cleanId.isEmpty ? 'AEGIS-1001' : cleanId,
+      'senderId': cleanSender.isEmpty ? 'SOS-USER' : cleanSender,
+      'targetId': cleanTarget.isEmpty ? 'RES-1001' : cleanTarget,
       'groupName': groupName,
       'latitude': latitude,
       'longitude': longitude,
@@ -57,6 +74,7 @@ class SosCloudService {
   }
 
   Future<void> publishSosToTargets({
+    required String senderId,
     required List<String> targetIds,
     required String groupName,
     required double latitude,
@@ -68,10 +86,11 @@ class SosCloudService {
         .toSet()
         .toList();
 
-    final idsToSend = uniqueIds.isEmpty ? ['AEGIS-1001'] : uniqueIds;
+    final idsToSend = uniqueIds.isEmpty ? ['RES-1001'] : uniqueIds;
 
     for (final id in idsToSend) {
       await publishSosAlert(
+        senderId: senderId,
         targetId: id,
         groupName: groupName,
         latitude: latitude,
