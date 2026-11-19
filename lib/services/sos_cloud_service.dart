@@ -3,8 +3,7 @@
 class LiveSosAlert {
   final String id;
   final String senderId;
-  final String responseId;
-  final String groupName;
+  final String targetResponseId;
   final double latitude;
   final double longitude;
   final DateTime timestamp;
@@ -12,8 +11,7 @@ class LiveSosAlert {
   LiveSosAlert({
     required this.id,
     required this.senderId,
-    required this.responseId,
-    required this.groupName,
+    required this.targetResponseId,
     required this.latitude,
     required this.longitude,
     required this.timestamp,
@@ -26,10 +24,9 @@ class LiveSosAlert {
     final ts = data['timestamp'];
     return LiveSosAlert(
       id: doc.id,
-      senderId: (data['senderId'] ?? 'UNKNOWN-SENDER').toString().toUpperCase(),
-      responseId:
-          (data['responseId'] ?? 'RESP-1001').toString().toUpperCase(),
-      groupName: (data['groupName'] ?? 'RESPONSE GROUP').toString(),
+      senderId: (data['senderId'] ?? 'UNKNOWN').toString().toUpperCase(),
+      targetResponseId:
+          (data['targetResponseId'] ?? 'RESP-2').toString().toUpperCase(),
       latitude: ((data['latitude'] ?? 0) as num).toDouble(),
       longitude: ((data['longitude'] ?? 0) as num).toDouble(),
       timestamp: ts is Timestamp ? ts.toDate() : DateTime.now(),
@@ -43,19 +40,18 @@ class SosCloudService {
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Future<void> publishSosAlert({
+  Future<void> sendSosToTarget({
     required String senderId,
-    required String responseId,
-    required String groupName,
+    required String targetResponseId,
     required double latitude,
     required double longitude,
   }) async {
     final cleanSender = senderId.trim().toUpperCase();
-    final cleanResponse = responseId.trim().toUpperCase();
+    final cleanTarget = targetResponseId.trim().toUpperCase();
+
     await _db.collection('sos_alerts').add({
       'senderId': cleanSender.isEmpty ? 'SENDER-1' : cleanSender,
-      'responseId': cleanResponse.isEmpty ? 'RESP-1' : cleanResponse,
-      'groupName': groupName,
+      'targetResponseId': cleanTarget.isEmpty ? 'RESP-2' : cleanTarget,
       'latitude': latitude,
       'longitude': longitude,
       'status': 'ACTIVE_SOS',
@@ -63,50 +59,30 @@ class SosCloudService {
     });
   }
 
-  Future<void> publishSosToResponseIds({
-    required String senderId,
-    required List<String> responseIds,
-    required String groupName,
-    required double latitude,
-    required double longitude,
-  }) async {
-    final uniqueIds = responseIds
-        .map((e) => e.trim().toUpperCase())
-        .where((e) => e.isNotEmpty)
-        .toSet()
-        .toList();
-
-    for (final rId in uniqueIds) {
-      await publishSosAlert(
-        senderId: senderId,
-        responseId: rId,
-        groupName: groupName,
-        latitude: latitude,
-        longitude: longitude,
-      );
-    }
-  }
-
-  Stream<LiveSosAlert?> watchIncomingAlertForMyResponseId(
-    String myResponseId,
-    String mySenderId,
-  ) {
-    final cleanResp = myResponseId.trim().toUpperCase();
+  // Listens for SOS alerts directed to this device's own ID (when acting as responder)
+  // while strictly ignoring alerts sent by this device's own senderId.
+  Stream<LiveSosAlert?> watchIncomingAlert({
+    required String myListenId,
+    required String mySenderId,
+  }) {
+    final cleanListen = myListenId.trim().toUpperCase();
     final cleanSender = mySenderId.trim().toUpperCase();
 
     return _db
         .collection('sos_alerts')
-        .where('responseId', isEqualTo: cleanResp)
+        .where('targetResponseId', isEqualTo: cleanListen)
         .snapshots()
         .map((snapshot) {
       if (snapshot.docs.isEmpty) return null;
-      final incoming = snapshot.docs
+      final alerts = snapshot.docs
           .map((d) => LiveSosAlert.fromDoc(d))
           .where((a) => a.senderId.trim().toUpperCase() != cleanSender)
           .toList();
-      if (incoming.isEmpty) return null;
-      incoming.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      return incoming.first;
+      if (incomingEmpty(alerts)) return null;
+      alerts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return alerts.first;
     });
   }
+
+  bool incomingEmpty(List<LiveSosAlert> list) => list.isEmpty;
 }
