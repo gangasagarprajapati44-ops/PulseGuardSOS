@@ -46217,7 +46217,7 @@ break}p.d=0
 p.e=null
 b.$1('VOICE ARMED \u2022 SAY "NEED HELP" x2')
 s=7
-return A.A(p.a.AZ(B.JM,new A.anp(p,b,a),!0),$async$rU)
+return A.A(p.a.AZ(new A.akV(!1,!0,!1,B.JM,0,!1,!1,null,null,null,null),new A.anp(p,b,a)),$async$rU)
 case 7:q=!0
 s=1
 break
@@ -92965,9 +92965,9 @@ case 3:o=p.Q
 if(o.a>5e4)p.CW=A.cf(o,p.gaf3())
 case 1:return A.F(q,r)}})
 return A.G($async$pX,r)},
-AZ(a,b,c){return this.arn(a,b,!0)},
-arn(a,b,c){var s=0,r=A.H(t.z),q=1,p=[],o=this,n,m,l,k,j,i,h
-var $async$AZ=A.C(function(d,e){if(d===1){p.push(e)
+AZ(a,b){return this.arn(a,b)},
+arn(a,b){var s=0,r=A.H(t.z),q=1,p=[],o=this,n,m,l,k,j,i
+var $async$AZ=A.C(function(c,d){if(c===1){p.push(d)
 s=q}for(;;)switch(s){case 0:if(!o.a)throw A.e(new A.Rw())
 o.as=!1
 o.db=null
@@ -92980,25 +92980,24 @@ o.e=!0
 k=o.CW
 if(k!=null)k.aI(0)
 o.CW=null
-j=new A.akV(!1,!0,!1,a,0,!1,!1,null,null,null,null)
-n=j
+n=a
 q=3
 s=6
 return A.A($.aAl().oO(n.y,n),$async$AZ)
-case 6:m=e
+case 6:m=d
 if(m){A.yw()
 o.x=o.w=A.tU().a
 o.SP(n.w,n.x)}q=1
 s=5
 break
 case 3:q=2
-h=p.pop()
-k=A.af(h)
+i=p.pop()
+k=A.af(i)
 if(k instanceof A.i9){l=k
 l.toString
 l.toString
 l.toString
-throw A.e(new A.Om())}else throw h
+throw A.e(new A.Om())}else throw i
 s=5
 break
 case 2:s=1

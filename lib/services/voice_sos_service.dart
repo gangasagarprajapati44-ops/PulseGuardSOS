@@ -35,8 +35,10 @@ class VoiceSosService {
     onStatus('VOICE ARMED • SAY "NEED HELP" x2');
 
     await _speech.listen(
-      listenMode: ListenMode.dictation,
-      partialResults: true,
+      listenOptions: SpeechListenOptions(
+        listenMode: ListenMode.dictation,
+        partialResults: true,
+      ),
       onResult: (result) async {
         final spoken = result.recognizedWords.toLowerCase();
         if (!spoken.contains('need help')) return;
