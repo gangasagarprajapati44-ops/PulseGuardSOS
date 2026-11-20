@@ -1,5 +1,4 @@
-﻿import 'dart:js_interop';
-import 'package:web/web.dart' as web;
+﻿import 'package:web/web.dart' as web;
 
 void triggerWebSirenPulse() {
   try {
@@ -23,7 +22,6 @@ void triggerWebSirenPulse() {
   } catch (_) {}
 }
 
-// Classic Mi-inspired melodic phone ringtone pattern (musical notes, not siren)
 void triggerClassicPhoneRingtone() {
   try {
     final ctx = web.AudioContext();
