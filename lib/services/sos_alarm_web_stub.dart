@@ -1,1 +1,2 @@
 ﻿void triggerWebSirenPulse() {}
+void triggerClassicPhoneRingtone() {}

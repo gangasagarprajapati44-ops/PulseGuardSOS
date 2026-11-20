@@ -71,7 +71,7 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
               Column(
                 children: [
                   Text(
-                    _isConnected ? 'AEGIS CALL CONNECTED' : 'INCOMING CALL...',
+                    _isConnected ? 'CALL CONNECTED' : 'INCOMING CALL...',
                     style: const TextStyle(
                       color: Color(0xFF00F0FF),
                       letterSpacing: 1.5,
@@ -80,10 +80,10 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  CircleAvatar(
+                  const CircleAvatar(
                     radius: 48,
-                    backgroundColor: const Color(0xFF162232),
-                    child: const Icon(
+                    backgroundColor: Color(0xFF162232),
+                    child: Icon(
                       Icons.person,
                       size: 52,
                       color: Colors.white,
@@ -110,7 +110,7 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
                   Text(
                     _isConnected
                         ? _formattedDuration()
-                        : 'Ringing silently/alert...',
+                        : 'Classic Ringtone • Ringing...',
                     style: TextStyle(
                       color: _isConnected
                           ? const Color(0xFF64FFDA)

@@ -16,20 +16,20 @@ class FakeCallService {
   void startRingtone() {
     if (_isRinging) return;
     _isRinging = true;
-    _pulse();
+    _ringOnce();
     _ringTimer?.cancel();
-    _ringTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+    _ringTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!_isRinging) return;
-      _pulse();
+      _ringOnce();
     });
   }
 
-  void _pulse() {
+  void _ringOnce() {
     if (!kIsWeb) {
-      HapticFeedback.vibrate();
-      SystemSound.play(SystemSoundType.alert);
+      HapticFeedback.mediumImpact();
+      SystemSound.play(SystemSoundType.click);
     }
-    triggerWebSirenPulse();
+    triggerClassicPhoneRingtone();
   }
 
   void stopRingtone() {
