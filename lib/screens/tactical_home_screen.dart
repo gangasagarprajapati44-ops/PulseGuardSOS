@@ -29,7 +29,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
   String _mySenderId = 'SENDER-1';
   String _targetResponseId = 'RESP-2';
 
-  String _statusText = 'SHIELD ARMED • STANDBY';
+  String _statusText = 'SHIELD ARMED • PAIR LOCKED';
   String _locationSource = 'DEFAULT SECTOR';
   double _lat = 25.5941;
   double _lng = 85.1376;
@@ -42,8 +42,8 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
   void initState() {
     super.initState();
     final saved = OfflineVaultService.getSavedIds();
-    _mySenderId = saved.mySenderId;
-    _targetResponseId = saved.targetResponseId;
+    _mySenderId = _cleanCode(saved.mySenderId, 'SENDER-1');
+    _targetResponseId = _cleanCode(saved.targetResponseId, 'RESP-2');
     _handledAlertIds = OfflineVaultService.getHandledAlertIds();
 
     _dimensionController = AnimationController(
@@ -59,7 +59,17 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     super.dispose();
   }
 
+  String _cleanCode(String input, String fallback) {
+    final cleaned = input
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9_-]'), '');
+    if (cleaned.isEmpty) return fallback;
+    return cleaned.length > 24 ? cleaned.substring(0, 24) : cleaned;
+  }
+
   Future<void> _handleIncomingAlert(LiveSosAlert alert) async {
+    if (!alert.isVerifiedPair) return;
     if (alert.senderId.trim().toUpperCase() ==
         _mySenderId.trim().toUpperCase()) {
       return;
@@ -113,7 +123,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
               controller: senderController,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                labelText: 'My Sender ID (Your ID)',
+                labelText: 'My Sender ID (A-Z, 0-9, -, _)',
                 hintText: 'e.g. SENDER-1',
                 hintStyle: TextStyle(color: Colors.white30, fontSize: 11),
                 labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
@@ -144,12 +154,10 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
               foregroundColor: Colors.black,
             ),
             onPressed: () async {
-              final nextSender = senderController.text.trim().toUpperCase();
-              final nextResponse = responseController.text.trim().toUpperCase();
               final finalSender =
-                  nextSender.isEmpty ? _mySenderId : nextSender;
+                  _cleanCode(senderController.text, _mySenderId);
               final finalResponse =
-                  nextResponse.isEmpty ? _targetResponseId : nextResponse;
+                  _cleanCode(responseController.text, _targetResponseId);
 
               await OfflineVaultService.saveIds(
                 mySenderId: finalSender,
@@ -205,8 +213,8 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     setState(() {
       _isSosActive = nextState;
       _statusText = _isSosActive
-          ? 'SOS ACTIVE • ALARM SENT TO $_targetResponseId'
-          : 'SHIELD ARMED • STANDBY';
+          ? 'SOS ACTIVE • LOCKED ALERT TO $_targetResponseId'
+          : 'SHIELD ARMED • PAIR LOCKED';
     });
 
     if (_isSosActive) {
@@ -226,7 +234,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
           _localTargetLat = _lat;
           _localTargetLng = _lng;
           _localTargetLabel =
-              'OUTGOING SOS FROM $_mySenderId → $_targetResponseId';
+              'LOCKED SOS FROM $_mySenderId → $_targetResponseId';
           _isPublishingCloud = true;
         });
       }
@@ -418,7 +426,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.shield_outlined, color: Color(0xFF00F0FF), size: 20),
+            const Icon(Icons.lock_outline, color: Color(0xFF00F0FF), size: 19),
             const SizedBox(width: 8),
             const Text(
               'AEGIS',
@@ -438,10 +446,10 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                 border: Border.all(color: const Color(0xFF42A5F5)),
               ),
               child: const Text(
-                '3D/4D/5D',
+                'SECURED',
                 style: TextStyle(
                   color: Color(0xFF64B5F6),
-                  fontSize: 9.5,
+                  fontSize: 9,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -455,7 +463,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                 border: Border.all(color: const Color(0xFF1DE9B6)),
               ),
               child: Text(
-                _isSosActive ? 'SOS ACTIVE' : 'SYSTEM ARMED',
+                _isSosActive ? 'SOS ACTIVE' : 'SHIELD LOCKED',
                 style: const TextStyle(
                   color: Color(0xFF64FFDA),
                   fontSize: 9,
@@ -475,6 +483,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
         builder: (context, snapshot) {
           final incomingAlert = snapshot.data;
           if (incomingAlert != null &&
+              incomingAlert.isVerifiedPair &&
               !_handledAlertIds.contains(incomingAlert.id)) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _handleIncomingAlert(incomingAlert);
@@ -482,6 +491,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
           }
 
           final bool hasUnmutedLiveAlert = incomingAlert != null &&
+              incomingAlert.isVerifiedPair &&
               incomingAlert.id == _activeAlertId &&
               !_alarmAcknowledged;
           final bool hasTarget = hasUnmutedLiveAlert || _localTargetLat != null;
@@ -496,13 +506,13 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
               : 'NO TARGET';
 
           final String targetLabel = hasUnmutedLiveAlert
-              ? 'HELP NEEDED • FROM ${incomingAlert.senderId}'
+              ? 'VERIFIED SOS • FROM ${incomingAlert.senderId}'
               : _localTargetLabel;
           final String targetDetail = hasUnmutedLiveAlert
               ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${incomingAlert.latitude.toStringAsFixed(5)}, ${incomingAlert.longitude.toStringAsFixed(5)}'
               : (_localTargetLat != null
                   ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${_localTargetLat!.toStringAsFixed(5)}, ${_localTargetLng!.toStringAsFixed(5)}'
-                  : 'Saved IDs loaded. HOLD SOS to alert $_targetResponseId.');
+                  : 'Encrypted pair shield active. HOLD SOS to alert $_targetResponseId.');
 
           return Center(
             child: ConstrainedBox(
@@ -592,7 +602,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'SOS ALARM FROM ${incomingAlert.senderId}!',
+                                    'VERIFIED SOS FROM ${incomingAlert.senderId}!',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w900,
@@ -637,7 +647,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
 
                     Text(
                       _isPublishingCloud
-                          ? 'SOS ACTIVE • SENDING TO $_targetResponseId...'
+                          ? 'SOS ACTIVE • ENCRYPTING & SENDING TO $_targetResponseId...'
                           : _statusText,
                       textAlign: TextAlign.center,
                       style: TextStyle(
