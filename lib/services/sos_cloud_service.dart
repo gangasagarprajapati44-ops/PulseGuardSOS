@@ -59,8 +59,6 @@ class SosCloudService {
     });
   }
 
-  // Listens for SOS alerts directed to this device's own ID (when acting as responder)
-  // while strictly ignoring alerts sent by this device's own senderId.
   Stream<LiveSosAlert?> watchIncomingAlert({
     required String myListenId,
     required String mySenderId,
@@ -74,15 +72,20 @@ class SosCloudService {
         .snapshots()
         .map((snapshot) {
       if (snapshot.docs.isEmpty) return null;
-      final alerts = snapshot.docs
+      final cutoff = DateTime.now().subtract(const Duration(minutes: 2));
+
+      final recentAlerts = snapshot.docs
           .map((d) => LiveSosAlert.fromDoc(d))
-          .where((a) => a.senderId.trim().toUpperCase() != cleanSender)
+          .where(
+            (a) =>
+                a.senderId.trim().toUpperCase() != cleanSender &&
+                a.timestamp.isAfter(cutoff),
+          )
           .toList();
-      if (incomingEmpty(alerts)) return null;
-      alerts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      return alerts.first;
+
+      if (recentAlerts.isEmpty) return null;
+      recentAlerts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return recentAlerts.first;
     });
   }
-
-  bool incomingEmpty(List<LiveSosAlert> list) => list.isEmpty;
 }

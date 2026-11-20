@@ -23,9 +23,9 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
   bool _isLocating = false;
   bool _isPublishingCloud = false;
   bool _alarmAcknowledged = false;
-  String? _lastTriggeredAlertKey;
+  String? _activeAlertId;
+  Set<String> _handledAlertIds = <String>{};
 
-  // Only 2 IDs: Your own Sender ID & Target Response ID (where alarm should ring)
   String _mySenderId = 'SENDER-1';
   String _targetResponseId = 'RESP-2';
 
@@ -44,6 +44,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     final saved = OfflineVaultService.getSavedIds();
     _mySenderId = saved.mySenderId;
     _targetResponseId = saved.targetResponseId;
+    _handledAlertIds = OfflineVaultService.getHandledAlertIds();
 
     _dimensionController = AnimationController(
       vsync: this,
@@ -58,17 +59,24 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     super.dispose();
   }
 
-  void _handleIncomingAlert(LiveSosAlert alert) {
-    // Strictly never ring on the device that sent this SOS
+  Future<void> _handleIncomingAlert(LiveSosAlert alert) async {
     if (alert.senderId.trim().toUpperCase() ==
         _mySenderId.trim().toUpperCase()) {
       return;
     }
 
-    final alertKey = '${alert.id}_${alert.timestamp.millisecondsSinceEpoch}';
-    if (_lastTriggeredAlertKey == alertKey) return;
-    _lastTriggeredAlertKey = alertKey;
-    _alarmAcknowledged = false;
+    if (_handledAlertIds.contains(alert.id)) {
+      return;
+    }
+
+    _handledAlertIds.add(alert.id);
+    await OfflineVaultService.markAlertHandled(alert.id);
+
+    if (!mounted) return;
+    setState(() {
+      _activeAlertId = alert.id;
+      _alarmAcknowledged = false;
+    });
     SosAlarmService.instance.startEmergencySiren();
   }
 
@@ -152,7 +160,6 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
               setState(() {
                 _mySenderId = finalSender;
                 _targetResponseId = finalResponse;
-                _lastTriggeredAlertKey = null;
               });
               if (ctx.mounted) Navigator.pop(ctx);
             },
@@ -461,36 +468,37 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
         centerTitle: true,
       ),
       body: StreamBuilder<LiveSosAlert?>(
-        // Watch alerts sent to _mySenderId (so when another user sets their TARGET RESPONSE ID to your SENDER ID, alarm rings here)
         stream: SosCloudService.instance.watchIncomingAlert(
           myListenId: _mySenderId,
           mySenderId: _mySenderId,
         ),
         builder: (context, snapshot) {
           final incomingAlert = snapshot.data;
-          if (incomingAlert != null) {
+          if (incomingAlert != null &&
+              !_handledAlertIds.contains(incomingAlert.id)) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _handleIncomingAlert(incomingAlert);
             });
           }
 
-          final bool hasTarget = incomingAlert != null || _localTargetLat != null;
-          final double targetLat = incomingAlert != null
+          final bool hasUnmutedLiveAlert = incomingAlert != null &&
+              incomingAlert.id == _activeAlertId &&
+              !_alarmAcknowledged;
+          final bool hasTarget = hasUnmutedLiveAlert || _localTargetLat != null;
+          final double targetLat = hasUnmutedLiveAlert
               ? incomingAlert.latitude
               : (_localTargetLat ?? _lat);
-          final double targetLng = incomingAlert != null
+          final double targetLng = hasUnmutedLiveAlert
               ? incomingAlert.longitude
               : (_localTargetLng ?? _lng);
           final String distanceBadgeText = hasTarget
               ? _formatDistanceFromMe(targetLat, targetLng)
               : 'NO TARGET';
-          final bool showActiveAlarmBanner =
-              incomingAlert != null && !_alarmAcknowledged;
 
-          final String targetLabel = incomingAlert != null
+          final String targetLabel = hasUnmutedLiveAlert
               ? 'HELP NEEDED • FROM ${incomingAlert.senderId}'
               : _localTargetLabel;
-          final String targetDetail = incomingAlert != null
+          final String targetDetail = hasUnmutedLiveAlert
               ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${incomingAlert.latitude.toStringAsFixed(5)}, ${incomingAlert.longitude.toStringAsFixed(5)}'
               : (_localTargetLat != null
                   ? 'DISTANCE FROM YOU: $distanceBadgeText\nSTART (MY): ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}\nEND (TARGET): ${_localTargetLat!.toStringAsFixed(5)}, ${_localTargetLng!.toStringAsFixed(5)}'
@@ -504,7 +512,6 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Only 2 Saved IDs Card (Sender ID & Target Response ID)
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -561,7 +568,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
 
                     const SizedBox(height: 14),
 
-                    if (showActiveAlarmBanner) ...[
+                    if (hasUnmutedLiveAlert) ...[
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
@@ -624,7 +631,6 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                       const SizedBox(height: 14),
                     ],
 
-                    // 3D / 4D / 5D Special SOS Button
                     Center(child: _buildMultiDimensionalSosButton()),
 
                     const SizedBox(height: 10),
@@ -646,7 +652,6 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
 
                     const SizedBox(height: 14),
 
-                    // Telemetry Bar
                     Container(
                       padding: const EdgeInsets.symmetric(
                         vertical: 12,
@@ -752,7 +757,6 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
 
                     const SizedBox(height: 8),
 
-                    // Need-Help Location & Distance Card
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -838,7 +842,6 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
 
                     const SizedBox(height: 16),
 
-                    // Direct Navigation to Need-Help User's Location
                     SizedBox(
                       height: 52,
                       child: ElevatedButton.icon(

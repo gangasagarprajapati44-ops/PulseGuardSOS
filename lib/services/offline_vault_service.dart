@@ -8,6 +8,7 @@ class OfflineVaultService {
   static const String _configBoxName = 'aegis_config_box';
   static const String _senderIdKey = 'saved_my_sender_id';
   static const String _targetResponseIdKey = 'saved_target_response_id';
+  static const String _handledAlertsKey = 'handled_alert_ids';
 
   static Future<void> init() async {
     await Hive.initFlutter();
@@ -63,5 +64,24 @@ class OfflineVaultService {
       mySenderId: s.isEmpty ? 'SENDER-1' : s,
       targetResponseId: r.isEmpty ? 'RESP-2' : r,
     );
+  }
+
+  static Set<String> getHandledAlertIds() {
+    if (!Hive.isBoxOpen(_configBoxName)) return <String>{};
+    final raw = _configBox.get(_handledAlertsKey);
+    if (raw is! List) return <String>{};
+    return raw.map((e) => e.toString()).toSet();
+  }
+
+  static Future<void> markAlertHandled(String alertId) async {
+    if (!Hive.isBoxOpen(_configBoxName) || alertId.trim().isEmpty) return;
+    final current = getHandledAlertIds().toList();
+    if (!current.contains(alertId)) {
+      current.add(alertId);
+      final trimmed = current.length > 100
+          ? current.sublist(current.length - 100)
+          : current;
+      await _configBox.put(_handledAlertsKey, trimmed);
+    }
   }
 }
