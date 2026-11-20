@@ -1,5 +1,6 @@
 ﻿import 'package:hive_flutter/hive_flutter.dart';
 import '../models/safety_ping.dart';
+import 'emergency_contact_service.dart';
 
 class OfflineVaultService {
   OfflineVaultService._();
@@ -9,6 +10,7 @@ class OfflineVaultService {
   static const String _senderIdKey = 'saved_my_sender_id';
   static const String _targetResponseIdKey = 'saved_target_response_id';
   static const String _handledAlertsKey = 'handled_alert_ids';
+  static const String _contactsKey = 'saved_emergency_contacts';
 
   static Future<void> init() async {
     await Hive.initFlutter();
@@ -83,5 +85,23 @@ class OfflineVaultService {
           : current;
       await _configBox.put(_handledAlertsKey, trimmed);
     }
+  }
+
+  static Future<void> saveContacts(List<EmergencyContact> contacts) async {
+    if (!Hive.isBoxOpen(_configBoxName)) return;
+    await _configBox.put(
+      _contactsKey,
+      contacts.map((c) => c.toMap()).toList(),
+    );
+  }
+
+  static List<EmergencyContact> getSavedContacts() {
+    if (!Hive.isBoxOpen(_configBoxName)) return [];
+    final raw = _configBox.get(_contactsKey);
+    if (raw is! List) return [];
+    return raw
+        .whereType()
+        .map((m) => EmergencyContact.fromMap(Map<String, dynamic>.from(m)))
+        .toList();
   }
 }

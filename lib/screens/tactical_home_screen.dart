@@ -3,10 +3,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/safety_ping.dart';
+import '../services/emergency_contact_service.dart';
 import '../services/offline_vault_service.dart';
 import '../services/rescue_nav_service.dart';
 import '../services/sos_alarm_service.dart';
 import '../services/sos_cloud_service.dart';
+import '../services/voice_sos_service.dart';
+import 'fake_call_screen.dart';
 
 class TacticalHomeScreen extends StatefulWidget {
   const TacticalHomeScreen({super.key});
@@ -23,6 +26,10 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
   bool _isLocating = false;
   bool _isPublishingCloud = false;
   bool _alarmAcknowledged = false;
+  bool _voiceArmed = false;
+  bool _sendSmsOnSos = true;
+  String _voiceStatus = 'VOICE: STANDBY';
+
   String? _activeAlertId;
   Set<String> _handledAlertIds = <String>{};
 
@@ -38,6 +45,8 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
   double? _localTargetLng;
   String _localTargetLabel = 'NO ACTIVE DISTRESS SIGNAL';
 
+  List<EmergencyContact> _contacts = [];
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +54,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     _mySenderId = _cleanCode(saved.mySenderId, 'SENDER-1');
     _targetResponseId = _cleanCode(saved.targetResponseId, 'RESP-2');
     _handledAlertIds = OfflineVaultService.getHandledAlertIds();
+    _contacts = OfflineVaultService.getSavedContacts();
 
     _dimensionController = AnimationController(
       vsync: this,
@@ -56,6 +66,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
   void dispose() {
     _dimensionController.dispose();
     SosAlarmService.instance.stopEmergencySiren();
+    VoiceSosService.instance.stopListening(onStatus: (_) {});
     super.dispose();
   }
 
@@ -66,6 +77,120 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
         .replaceAll(RegExp(r'[^A-Z0-9_-]'), '');
     if (cleaned.isEmpty) return fallback;
     return cleaned.length > 24 ? cleaned.substring(0, 24) : cleaned;
+  }
+
+  Future<void> _toggleVoiceTrigger() async {
+    if (_voiceArmed) {
+      await VoiceSosService.instance.stopListening(
+        onStatus: (st) {
+          if (mounted) setState(() => _voiceStatus = st);
+        },
+      );
+      if (mounted) setState(() => _voiceArmed = false);
+      return;
+    }
+
+    final started = await VoiceSosService.instance.startListening(
+      onStatus: (st) {
+        if (mounted) setState(() => _voiceStatus = st);
+      },
+      onDoubleNeedHelp: () async {
+        if (!_isSosActive) {
+          await _toggleSos();
+        }
+      },
+    );
+
+    if (mounted) {
+      setState(() => _voiceArmed = started);
+    }
+  }
+
+  void _openFakeCall() {
+    final firstContact = _contacts.firstWhere(
+      (c) => c.phone.trim().isNotEmpty,
+      orElse: () => EmergencyContact(
+        name: 'GUARDIAN CALL',
+        phone: '+91 98XXX XXXXX',
+      ),
+    );
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FakeCallScreen(
+          callerName: firstContact.name,
+          callerNumber: firstContact.phone,
+        ),
+      ),
+    );
+  }
+
+  void _showAddContactDialog() {
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131B26),
+        title: const Text(
+          'ADD EMERGENCY CONTACT',
+          style: TextStyle(color: Color(0xFF00F0FF), fontSize: 15),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Contact Name (e.g. Mom / Brother)',
+                labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: phoneCtrl,
+              keyboardType: TextInputType.phone,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Mobile Number (with country code)',
+                hintText: '+919876543210',
+                hintStyle: TextStyle(color: Colors.white30, fontSize: 11),
+                labelStyle: TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child:
+                const Text('CANCEL', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00F0FF),
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              final phone = phoneCtrl.text.trim();
+              if (name.isNotEmpty && phone.isNotEmpty) {
+                final updated = [
+                  ..._contacts,
+                  EmergencyContact(name: name, phone: phone, enabled: true),
+                ];
+                await OfflineVaultService.saveContacts(updated);
+                if (mounted) setState(() => _contacts = updated);
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('SAVE'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleIncomingAlert(LiveSosAlert alert) async {
@@ -246,6 +371,15 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
           latitude: _lat,
           longitude: _lng,
         );
+
+        if (_sendSmsOnSos && _contacts.any((c) => c.enabled)) {
+          await EmergencyContactService.instance.openSmsToContacts(
+            contacts: _contacts,
+            senderId: _mySenderId,
+            lat: _lat,
+            lng: _lng,
+          );
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -522,6 +656,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // IDs Card
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -576,7 +711,71 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
                       ),
                     ),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
+
+                    // Quick Tactical Actions: Fake Call & Voice "need help" x2
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF00F0FF),
+                              side: const BorderSide(color: Color(0xFF00F0FF)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onPressed: _openFakeCall,
+                            icon: const Icon(Icons.phone_callback, size: 18),
+                            label: const Text(
+                              'FAKE CALL',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _voiceArmed
+                                  ? const Color(0xFF64FFDA)
+                                  : Colors.white,
+                              side: BorderSide(
+                                color: _voiceArmed
+                                    ? const Color(0xFF64FFDA)
+                                    : Colors.white24,
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onPressed: _toggleVoiceTrigger,
+                            icon: Icon(
+                              _voiceArmed ? Icons.mic : Icons.mic_none,
+                              size: 18,
+                            ),
+                            label: Text(
+                              _voiceArmed ? 'VOICE ON (x2)' : 'VOICE "NEED HELP"',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 6),
+                    Text(
+                      _voiceStatus,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 10,
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
 
                     if (hasUnmutedLiveAlert) ...[
                       Container(
@@ -662,6 +861,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
 
                     const SizedBox(height: 14),
 
+                    // Telemetry Bar
                     Container(
                       padding: const EdgeInsets.symmetric(
                         vertical: 12,
@@ -767,6 +967,126 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
 
                     const SizedBox(height: 8),
 
+                    // Emergency Contacts Section (Message + Live Location on SOS)
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0E1520),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'EMERGENCY CONTACTS (SMS + GPS)',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: _showAddContactDialog,
+                                icon: const Icon(
+                                  Icons.person_add_alt_1,
+                                  size: 15,
+                                  color: Color(0xFF00F0FF),
+                                ),
+                                label: const Text(
+                                  'ADD',
+                                  style: TextStyle(
+                                    color: Color(0xFF00F0FF),
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          SwitchListTile(
+                            dense: true,
+                            activeThumbColor: const Color(0xFF00F0FF),
+                            title: const Text(
+                              'Prepare Location SMS on SOS',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                            value: _sendSmsOnSos,
+                            onChanged: (v) => setState(() => _sendSmsOnSos = v),
+                          ),
+                          if (_contacts.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 6),
+                              child: Text(
+                                'No emergency numbers added yet. Tap ADD to save numbers.',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            )
+                          else
+                            ..._contacts.asMap().entries.map((entry) {
+                              final idx = entry.key;
+                              final c = entry.value;
+                              return Container(
+                                margin: const EdgeInsets.only(top: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF141E2E),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    c.name,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    c.phone,
+                                    style: const TextStyle(
+                                      color: Color(0xFF00F0FF),
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  trailing: Switch(
+                                    activeThumbColor: const Color(0xFF00F0FF),
+                                    value: c.enabled,
+                                    onChanged: (val) async {
+                                      final copy = List<EmergencyContact>.from(
+                                        _contacts,
+                                      );
+                                      copy[idx] = EmergencyContact(
+                                        name: c.name,
+                                        phone: c.phone,
+                                        enabled: val,
+                                      );
+                                      await OfflineVaultService.saveContacts(
+                                        copy,
+                                      );
+                                      if (mounted) {
+                                        setState(() => _contacts = copy);
+                                      }
+                                    },
+                                  ),
+                                ),
+                              );
+                            }),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Need-Help Location & Distance Card
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
