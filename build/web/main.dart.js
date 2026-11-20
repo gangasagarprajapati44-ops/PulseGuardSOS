@@ -45558,7 +45558,7 @@ s=B.c.qV(B.e.k(B.e.bv(s,60)),2,"0")+":"+B.c.qV(B.e.k(B.e.bm(s,60)),2,"0")}else s
 r=t.E
 s=A.c([A.eD(A.c([n,B.Aa,B.Dv,B.Aa,l,B.Ab,m,B.lN,A.cC(s,p,p,p,A.hy(p,p,o?B.eu:B.dn,p,p,p,p,p,p,p,p,16,p,p,B.hi,p,p,!0,p,p,p,p,p,p,p,p),p,p)],r),B.S,B.N,B.af)],r)
 o=q.ga8G()
-if(!q.d)s.push(A.ib(A.c([A.eD(A.c([A.aBo(B.bg,B.oO,"decline_fake_call",o),B.dZ,B.Wl],r),B.S,B.N,B.af),A.eD(A.c([A.aBo(B.Ei,B.GL,"accept_fake_call",q.ga5t()),B.dZ,B.Wa],r),B.S,B.N,B.af)],r),B.S,B.l4,B.af,0))
+if(!q.d)s.push(A.ib(A.c([A.eD(A.c([A.aBo(B.bg,B.oO,"decline_fake_call",o),B.dZ,B.Wk],r),B.S,B.N,B.af),A.eD(A.c([A.aBo(B.Ei,B.GL,"accept_fake_call",q.ga5t()),B.dZ,B.Wa],r),B.S,B.N,B.af)],r),B.S,B.l4,B.af,0))
 else s.push(A.eD(A.c([A.aBo(B.bg,B.oO,"hangup_fake_call",o),B.dZ,B.Wf],r),B.S,B.N,B.af))
 return A.aIG(p,B.DH,A.DH(!0,new A.cL(B.FV,A.eD(s,B.S,B.hD,B.af),p),B.ay,!0))}}
 A.aqF.prototype={
@@ -45739,7 +45739,7 @@ M(a){var s,r=null,q=A.aUu(),p=B.ju.jb(0.25),o=A.hQ(5)
 o=A.fG(r,B.Wb,B.x,r,new A.cZ(p,r,A.jg(B.ns,1),o,r,r,B.aJ),r,r,r,B.FX,r,r,r)
 p=A.hQ(20)
 s=A.jg(B.En,1)
-p=A.ib(A.c([B.GN,B.A8,B.Wk,B.A7,o,B.A8,A.fG(r,A.cC(this.e?"SOS ACTIVE":"SHIELD LOCKED",r,r,r,B.TD,r,r),B.x,r,new A.cZ(B.Eq,r,s,p,r,r,B.aJ),r,r,r,B.of,r,r,r)],t.E),B.S,B.N,B.bC,0)
+p=A.ib(A.c([B.GN,B.A8,B.Wn,B.A7,o,B.A8,A.fG(r,A.cC(this.e?"SOS ACTIVE":"SHIELD LOCKED",r,r,r,B.TD,r,r),B.x,r,new A.cZ(B.Eq,r,s,p,r,r,B.aJ),r,r,r,B.of,r,r,r)],t.E),B.S,B.N,B.bC,0)
 o=$.aEp()
 s=this.at
 return A.aIG(new A.z9(p,0,B.E8,!0,new A.XU(r,r,1/0,56),r),B.DU,new A.Ew(new A.awP(this,q),o.w7(s,s),r,t.Yy))}}
@@ -45943,7 +45943,7 @@ o=a.e
 j=o?46:28
 k=A.c([new A.dI(o?9:4,B.cI,k,B.i,j)],t.sq)
 o=t.E
-return A.wC(B.W,A.c([a0,p,e,c,A.aFf(A.k6(A.eD(A.c([B.Wn,B.Qp,A.cC(a.e?"HOLD\nDISARM":"HOLD\nSOS",b,b,b,B.Vu,B.d5,b),B.Qq,A.cC("TO "+a.ax,b,b,b,B.TQ,b,b)],o),B.S,B.N,B.bC),b,b),b,new A.cZ(b,b,l,b,k,new A.md(B.W,0.5,B.d7,b,0,q,b,b),B.cJ),B.k0,b,164,164)],o),B.a4,B.e_)},
+return A.wC(B.W,A.c([a0,p,e,c,A.aFf(A.k6(A.eD(A.c([B.Wm,B.Qp,A.cC(a.e?"HOLD\nDISARM":"HOLD\nSOS",b,b,b,B.Vu,B.d5,b),B.Qq,A.cC("TO "+a.ax,b,b,b,B.TQ,b,b)],o),B.S,B.N,B.bC),b,b),b,new A.cZ(b,b,l,b,k,new A.md(B.W,0.5,B.d7,b,0,q,b,b),B.cJ),B.k0,b,164,164)],o),B.a4,B.e_)},
 $S:385}
 A.awP.prototype={
 $2(a1,a2){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d=this,c=null,b="DISTANCE FROM YOU: ",a=a2.b,a0=a!=null
@@ -46000,7 +46000,7 @@ p.push(new A.fi(B.mx,c,c,A.aJ7(h,A.cC(k?"LOCKING GPS...":"SYNC LIVE GPS",c,c,c,B
 p.push(B.dZ)
 i=A.hQ(14)
 h=A.jg(B.fO,1)
-g=A.c([A.ib(A.c([B.Wo,A.aJ7(B.GK,B.Wm,a0.gaiA())],j),B.S,B.hD,B.af,0),new A.RN(a0.y,new A.awM(a0),B.ad,B.W6,!0,c)],j)
+g=A.c([A.ib(A.c([B.Wo,A.aJ7(B.GK,B.Wl,a0.gaiA())],j),B.S,B.hD,B.af,0),new A.RN(a0.y,new A.awM(a0),B.ad,B.W6,!0,c)],j)
 k=a0.dy
 if(k.length===0)g.push(B.MT)
 else{k=new A.BX(k,A.a_(k).i("BX<1>"))
@@ -99394,15 +99394,15 @@ B.We=new A.cV("VAULT PINGS",null,B.lV,null,null,null,null,null,null)
 B.Wf=new A.cV("END CALL",null,B.fo,null,null,null,null,null,null)
 B.Wh=new A.cV("EDIT SENDER & RESPONSE ID",null,B.AF,null,null,null,null,null,null)
 B.Wi=new A.cV("SYNC MODE",null,B.lV,null,null,null,null,null,null)
-B.UE=new A.o(!0,B.k,null,null,null,null,16,B.cR,null,1.5,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.Wk=new A.cV("AEGIS",null,B.UE,null,null,null,null,null,null)
-B.Wl=new A.cV("DECLINE",null,B.fo,null,null,null,null,null,null)
+B.Wk=new A.cV("DECLINE",null,B.fo,null,null,null,null,null,null)
 B.AJ=new A.cV("SAVE",null,null,null,null,null,null,null,null)
-B.Wm=new A.cV("ADD",null,B.lW,null,null,null,null,null,null)
+B.Wl=new A.cV("ADD",null,B.lW,null,null,null,null,null,null)
 B.TF=new A.o(!0,B.dn,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
 B.AK=new A.cV("CANCEL",null,B.TF,null,null,null,null,null,null)
 B.RC=new A.o(!0,B.ad,null,null,null,null,8.5,B.cR,null,1.4,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.Wn=new A.cV("3D\u20224D\u20225D",null,B.RC,null,null,null,null,null,null)
+B.Wm=new A.cV("3D\u20224D\u20225D",null,B.RC,null,null,null,null,null,null)
+B.UE=new A.o(!0,B.k,null,null,null,null,16,B.cR,null,1.5,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
+B.Wn=new A.cV("PULSE GUARD SOS",null,B.UE,null,null,null,null,null,null)
 B.Tw=new A.o(!0,B.k,null,null,null,null,11.5,B.ak,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
 B.Wo=new A.cV("EMERGENCY CONTACTS (SMS + GPS)",null,B.Tw,null,null,null,null,null,null)
 B.Wp=new A.cV("FAKE CALL",null,B.AG,null,null,null,null,null,null)

@@ -563,7 +563,7 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
             const Icon(Icons.lock_outline, color: Color(0xFF00F0FF), size: 19),
             const SizedBox(width: 8),
             const Text(
-              'AEGIS',
+              'PULSE GUARD SOS',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w900,
@@ -1220,3 +1220,4 @@ class _TacticalHomeScreenState extends State<TacticalHomeScreen>
     );
   }
 }
+
